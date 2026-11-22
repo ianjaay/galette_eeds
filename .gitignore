@@ -58,6 +58,8 @@ quick_gen_project_*
 # /galette/plugins/
 /galette/plugins/*
 !/galette/plugins/readme.txt
+!/galette/plugins/eeds/
+!/galette/plugins/eeds/**
 /galette/data/plugins/*
 !/galette/data/plugins/readme.txt
 

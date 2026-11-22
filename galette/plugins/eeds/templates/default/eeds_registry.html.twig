@@ -1,0 +1,61 @@
+{% extends "page.html.twig" %}
+
+{% block content %}
+<div class="ui segment">
+    <h2 class="ui header">{{ page_title }}</h2>
+
+    <h3 class="ui header">{{ _T("Structures") }}</h3>
+    {% if structures %}
+        <table class="ui celled table">
+            <thead>
+                <tr>
+                    <th>{{ _T("Code") }}</th>
+                    <th>{{ _T("Name") }}</th>
+                    <th>{{ _T("Type") }}</th>
+                    <th>{{ _T("Status") }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for structure in structures %}
+                    <tr>
+                        <td>{{ structure.structure_code }}</td>
+                        <td>{{ structure.structure_name }}</td>
+                        <td>{{ structure.structure_type }}</td>
+                        <td>{{ structure.recognition_status }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>{{ _T("No EEDS structures have been created.") }}</p>
+    {% endif %}
+
+    <h3 class="ui header">{{ _T("Affiliations") }}</h3>
+    {% if affiliations %}
+        <table class="ui celled table">
+            <thead>
+                <tr>
+                    <th>{{ _T("Member") }}</th>
+                    <th>{{ _T("Structure") }}</th>
+                    <th>{{ _T("Branch") }}</th>
+                    <th>{{ _T("Unit") }}</th>
+                    <th>{{ _T("Effective date") }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for affiliation in affiliations %}
+                    <tr>
+                        <td>{{ affiliation.id_adh }}</td>
+                        <td>{{ affiliation.id_structure }}</td>
+                        <td>{{ affiliation.branch }}</td>
+                        <td>{{ affiliation.unit }}</td>
+                        <td>{{ affiliation.effective_start }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>{{ _T("No EEDS affiliations have been recorded.") }}</p>
+    {% endif %}
+</div>
+{% endblock %}

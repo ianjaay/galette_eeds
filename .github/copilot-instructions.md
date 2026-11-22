@@ -468,3 +468,30 @@ Preferences do this declaratively rather than one call at a time: `PreferencesSc
 14. **Test Coverage:** Add tests for new features. If modifying existing code, ensure existing tests still pass with the correct test command.
 15. **Verify Before Running:** When about to run a command, first check if prerequisites are mentioned above and follow the specified order.
 16. **Sanitize renderable values before storing them.** `Html::clean()` when the value may contain HTML markup, `Html::strip()` when it must not. See *Storing Renderable Values* above.
+
+## EEDS project context
+
+This repository is a Galette-based EEDS application. The EEDS business reference is [`EEDS_2529_Dossier_reference_application.md`](../EEDS_2529_Dossier_reference_application.md); its structured summary is [`docs/product/project-context.md`](../docs/product/project-context.md). The reference distinguishes documented facts, proposals, and unresolved decisions. Preserve those distinctions. Do not implement a proposal as an approved rule or invent membership, fee, progression, transfer, appointment, guardian, retention, or permission rules.
+
+The dossier mentions prior Frappe/ERPNext exploration, but the code in this checkout is Galette/Slim. Verify actual code and approved architecture; do not assume an ERPNext bench or custom app exists.
+
+## Engineering workflow
+
+- Read [`AGENTS.md`](../AGENTS.md), this file, and the EEDS project context before product work.
+- Use [`docs/engineering/repository-audit.md`](../docs/engineering/repository-audit.md) as an initial map, then verify relevant code; it is not a substitute for tracing behavior.
+- For complex or cross-domain work, use [`docs/engineering/ai-development-workflow.md`](../docs/engineering/ai-development-workflow.md) and the task template. Involve only the specialist profiles needed from `.github/agents/`.
+- Use `.github/instructions/*.instructions.md` for path-specific requirements. Copilot agent profiles are in the current GitHub/VS Code `.agent.md` format; supported capabilities can vary by host and plan.
+- Keep implementation scoped to approved acceptance criteria. Do not refactor Galette broadly during the team bootstrap.
+
+## EEDS domain and data safeguards
+
+- Map EEDS concepts to existing Galette members, groups, roles, permissions, and plugin boundaries before proposing new entities or workflows.
+- Role checks must include applicable organizational/object scope; a UI-only restriction is not authorization.
+- Treat youth and member information as sensitive. Minimize collection, restrict access and exports, and require approved purpose, consent, retention, and safeguarding rules for sensitive data.
+- Preserve member and affiliation history. Never make irreversible data or migration changes without owner approval.
+- Keep MySQL/MariaDB and PostgreSQL support.
+- Document technical trade-offs and material decisions; ADRs stay proposed until approved.
+
+## Human approval and reporting
+
+The project owner must approve major architecture, authorization, privacy, dependency, destructive data/schema, production infrastructure, and release decisions. Never deploy to production or claim production deployment from a local `bin/serve` instance. Report assumptions, exact validations run, blockers, and changed files; do not claim unexecuted tests passed.

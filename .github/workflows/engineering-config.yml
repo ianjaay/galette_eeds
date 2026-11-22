@@ -1,0 +1,39 @@
+name: Engineering configuration
+
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - ".github/agents/**"
+      - ".github/instructions/**"
+      - ".github/copilot-instructions.md"
+      - "EEDS_2529_Dossier_reference_application.md"
+      - "bin/check-agent-config"
+      - "docs/engineering/**"
+      - "docs/product/project-context.md"
+  push:
+    branches:
+      - dev
+      - develop
+      - main
+    paths:
+      - ".devcontainer/**"
+      - ".github/agents/**"
+      - ".github/instructions/**"
+      - ".github/copilot-instructions.md"
+      - "EEDS_2529_Dossier_reference_application.md"
+      - "bin/check-agent-config"
+      - "docs/engineering/**"
+      - "docs/product/project-context.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate agent, instruction, and Codespaces configuration
+        run: ruby bin/check-agent-config

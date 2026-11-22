@@ -1,0 +1,89 @@
+#!/usr/bin/env ruby
+
+require "json"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+AGENT_TOOLS = %w[execute read edit search agent web todo].freeze
+
+def fail_check(message)
+  warn "Configuration check failed: #{message}"
+  exit 1
+end
+
+def read_frontmatter(path)
+  content = File.read(path)
+  match = content.match(/\A---\r?\n(.*?)\r?\n---(?:\r?\n|\z)/m)
+  fail_check("#{path.delete_prefix(ROOT + "/")} has no YAML frontmatter") unless match
+
+  YAML.safe_load(match[1], permitted_classes: [], aliases: false) ||
+    fail_check("#{path.delete_prefix(ROOT + "/")} has empty frontmatter")
+rescue Psych::Exception => error
+  fail_check("#{path.delete_prefix(ROOT + "/")} has invalid YAML: #{error.message}")
+end
+
+Dir.chdir(ROOT)
+agent_paths = Dir.glob(".github/agents/*.agent.md").sort
+fail_check("no custom agent profiles found") if agent_paths.empty?
+
+agent_names = []
+agent_paths.each do |path|
+  profile = read_frontmatter(path)
+  fail_check("#{path} must have a non-empty name") unless profile["name"].is_a?(String) && !profile["name"].strip.empty?
+  fail_check("#{path} must have a non-empty description") unless profile["description"].is_a?(String) && !profile["description"].strip.empty?
+  fail_check("#{path} name is duplicated") if agent_names.include?(profile["name"])
+  agent_names << profile["name"]
+
+  tools = profile["tools"]
+  next if tools.nil?
+  fail_check("#{path} tools must be a list") unless tools.is_a?(Array)
+  unsupported = tools - AGENT_TOOLS
+  fail_check("#{path} has unsupported tool aliases: #{unsupported.join(", ")}") unless unsupported.empty?
+end
+
+instruction_paths = Dir.glob(".github/instructions/*.instructions.md").sort
+fail_check("no path-specific Copilot instructions found") if instruction_paths.empty?
+instruction_paths.each do |path|
+  instructions = read_frontmatter(path)
+  selector = instructions["applyTo"]
+  fail_check("#{path} must define a non-empty applyTo glob") unless selector.is_a?(String) && !selector.strip.empty?
+end
+
+devcontainer = JSON.parse(File.read(".devcontainer/devcontainer.json"))
+fail_check("devcontainer must define a name") unless devcontainer["name"].is_a?(String)
+dockerfile = devcontainer.dig("build", "dockerfile")
+fail_check("devcontainer build Dockerfile does not exist") unless dockerfile && File.file?(File.join(".devcontainer", dockerfile))
+
+%w[
+  docs/engineering/repository-audit.md
+  docs/engineering/agent-team-architecture.md
+  docs/engineering/ai-development-workflow.md
+  docs/engineering/engineering-governance.md
+  docs/engineering/development-standards.md
+  docs/engineering/templates/development-task-template.md
+  docs/engineering/templates/technical-design-template.md
+  docs/engineering/templates/security-review-template.md
+  docs/engineering/templates/test-plan-template.md
+  docs/engineering/templates/code-review-template.md
+  docs/product/project-context.md
+].each do |path|
+  fail_check("required document is missing: #{path}") unless File.file?(path)
+end
+
+workflow_paths = Dir.glob(".github/workflows/*.{yml,yaml}").sort
+fail_check("no GitHub Actions workflows found") if workflow_paths.empty?
+workflow_paths.each do |path|
+  YAML.safe_load(File.read(path), permitted_classes: [], aliases: false) ||
+    fail_check("#{path} is empty")
+rescue Psych::Exception => error
+  fail_check("#{path} has invalid YAML: #{error.message}")
+end
+
+%w[
+  .github/copilot-instructions.md
+  .github/workflows/engineering-config.yml
+].each do |path|
+  fail_check("required configuration is missing: #{path}") unless File.file?(path)
+end
+
+puts "Validated #{agent_paths.length} agent profiles, #{instruction_paths.length} path-specific instruction files, #{workflow_paths.length} GitHub Actions workflows, the Codespaces devcontainer, and bootstrap documents."
