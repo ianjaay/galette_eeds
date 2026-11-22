@@ -14,6 +14,11 @@ use Galette\Core\Authentication;
 use Galette\Core\GalettePlugin;
 use Galette\Core\Plugins\MenuProviderInterface;
 use Galette\Core\Plugins\PermissionsProviderInterface;
+use Galette\Core\Plugins\InstallInitInterface;
+use Galette\Core\Db;
+use EEDSFoundation\Domain\StructureService;
+
+use function Safe\date;
 use Galette\Access\Permission;
 
 /**
@@ -23,8 +28,23 @@ use Galette\Access\Permission;
  */
 class PluginGaletteEeds extends GalettePlugin implements
     MenuProviderInterface,
-    PermissionsProviderInterface
+    PermissionsProviderInterface,
+    InstallInitInterface
 {
+    /**
+     * Create the default national root during plugin installation.
+     */
+    public function installInit(Db $zdb): void
+    {
+        (new StructureService())->ensureNationalRoot(
+            $zdb,
+            'Nation',
+            'NATION',
+            date('Y-m-d'),
+            null
+        );
+    }
+
     /**
      * Is the plugin fully installed?
      */

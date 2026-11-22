@@ -37,7 +37,9 @@ guardian where approved, and independent security/QA observers.
 5. Create and reconcile a contribution, exemption and receipt.
 6. Record an approved progression event and verify validator scope.
 7. Record training or camp attendance and verify restricted participant data.
-8. Export only an approved field set and verify the audit log.
+8. Export the approved XLSX field set and verify the audit log. The workbook
+   must contain only the caller's active affiliations and must exclude secrets
+   and unrelated database tables.
 9. Exercise no automatic age transition, duplicate merge or health-data collection.
 10. Verify responsive, keyboard and localization behavior for approved screens.
 
@@ -85,11 +87,12 @@ Ces résultats ne prouvent pas un export de données PDF/CSV réel : le code
 EEDS actuel enregistre uniquement les métadonnées de l'appel. Aucun fichier
 exporté n'a été vérifié.
 
-Depuis le durcissement R1, la route d’export renvoie HTTP 501 avec une erreur
-explicite au lieu de déclarer la réussite d’un export qui ne produit aucun
-fichier. La liste exacte des champs autorisés doit être approuvée avant la
-génération d’un fichier ; l’ancien résultat HTTP 200 ne vaut donc pas preuve
-d’acceptation de l’export.
+L’ancien comportement du durcissement R1 était délibérément HTTP 501 :
+il ne déclarait pas une exportation réussie alors qu’aucun fichier n’était
+produit. Depuis l’arbitrage XLSX du 2026-11-22, l’implémentation doit produire
+un classeur réel borné au périmètre EEDS de l’acteur. Tous les champs
+applicatifs non secrets sont retenus pour la première version ; le sélecteur
+configurable relève d’une évolution ultérieure.
 
 Le filtre Twig `|trans` du modèle EEDS a été corrigé avec les fonctions
 `_T(...)` utilisées par Galette. `twigcs` ne signale plus de violation.

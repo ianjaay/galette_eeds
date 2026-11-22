@@ -424,14 +424,23 @@ scope.
 
 ### Proposed value
 
-Replace unrestricted EEDS export-table selection with a domain allowlist:
+Replace unrestricted EEDS export-table selection with a scoped XLSX domain export:
 
-- only approved member/structure/report fields;
+- export format: XLSX;
+- fields: all non-secret Galette member fields and active EEDS domain fields
+  available to the export service, in the first R1 release;
+- no password, private cryptographic key/fingerprint or unrelated database
+  tables;
 - only members in the caller's resolved EEDS scope;
-- no unrelated minor or sensitive fields;
-- separate permission for export;
+- separate `eeds:export` permission;
+- export access is assigned by the association's approved profile/permission
+  matrix, not inferred from a job title;
+- the initial approved profile set is: central/national administrator,
+  regional commissioner, district commissioner and local-group commissioner;
 - export request and result audit;
-- optional privileged re-authentication/MFA.
+- the export audit records fields, structure IDs and generated row count;
+- optional privileged re-authentication/MFA remains open for a later hardening
+  requirement.
 
 Parameter exports and PDF/CSV exports must resolve the same scope before rows
 are generated.
@@ -449,8 +458,10 @@ approved. R1 export fields and row scope are maintained explicitly.
 
 ### Explicit approval required
 
-Approve the exported field list, scope, national export authority, retention
-of export files and whether MFA is mandatory.
+The owner approved the XLSX format and the initial all-fields principle on
+2026-11-22. The exact future configurable field selector, export-file
+retention and MFA requirement remain open. The export implementation must not
+include secrets or unrelated tables.
 
 ## 13. Contribution and good-standing boundary
 

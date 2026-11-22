@@ -18,12 +18,15 @@ use EEDSFoundation\Domain\MemberLifecycle;
 use EEDSFoundation\Domain\RegistryRepository;
 use EEDSFoundation\Domain\RenewalService;
 use EEDSFoundation\Domain\StructureService;
+use EEDSFoundation\Domain\EedsExportService;
 use Galette\Controllers\Attributes\Route;
 use Galette\Controllers\AbstractController;
 use Psr\Http\Message\ResponseInterface as Response;
 use Slim\Psr7\Request;
 
 use function Safe\json_encode;
+use function Safe\file_get_contents;
+use function Safe\unlink;
 
 /**
  * R1 EEDS registry controller.
@@ -239,13 +242,14 @@ class RegistryController extends AbstractController
             return $response->withStatus(403);
         }
 
-        if (!$this->scopeFor('eeds:validate')->allowsMember($this->zdb, $id)) {
-            return $response->withStatus(403);
-        }
-
         $post = $request->getParsedBody();
         if (!is_array($post)) {
             $post = [];
+        }
+
+        $effective_date = (string)($post['effective_date'] ?? date('Y-m-d'));
+        if (!$this->scopeFor('eeds:validate')->allowsMember($this->zdb, $id, $effective_date)) {
+            return $response->withStatus(403);
         }
 
         $ok = (new RenewalService())->renew(
@@ -436,16 +440,26 @@ class RegistryController extends AbstractController
             return $response->withStatus(403);
         }
 
-        $response->getBody()->write(json_encode(
-            [
-                'success' => false,
-                'error' => 'EEDS export is awaiting an approved field list.',
-            ],
-            JSON_UNESCAPED_UNICODE
-        ));
+        $scope = $this->scopeFor('eeds:export');
+        if ($scope->getStructureIds() === []) {
+            return $response->withStatus(403);
+        }
+
+        $export = (new EedsExportService())->export(
+            $this->zdb,
+            (int)$this->login->id,
+            $scope->getStructureIds()
+        );
+        $content = file_get_contents($export['path']);
+        unlink($export['path']);
+        if ($content === false) {
+            throw new \RuntimeException('Unable to read the generated EEDS XLSX file.');
+        }
+
+        $response->getBody()->write($content);
         return $response
-            ->withHeader('Content-Type', 'application/json')
-            ->withStatus(501);
+            ->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->withHeader('Content-Disposition', 'attachment; filename="eeds-export.xlsx"');
     }
 
     /**

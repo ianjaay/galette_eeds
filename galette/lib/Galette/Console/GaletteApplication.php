@@ -73,6 +73,14 @@ class GaletteApplication extends Application
                 $this->make($container, Command\FeatureDisable::class),
                 $this->make($container, Command\ProcessMailingQueue::class)
             ]);
+            if (class_exists(\EEDSFoundation\Console\InitializeNationalStructure::class)) {
+                $this->addCommand(
+                    $this->make(
+                        $container,
+                        \EEDSFoundation\Console\InitializeNationalStructure::class
+                    )
+                );
+            }
         }
         $this->addCommand($this->make($container, Command\MakeTwigCache::class));
         $this->addCommand($this->make($container, Command\TwigPotReferences::class));

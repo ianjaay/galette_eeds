@@ -15,6 +15,7 @@ use EEDSFoundation\Domain\AffiliationService;
 use EEDSFoundation\Domain\DuplicatePreview;
 use EEDSFoundation\Domain\RenewalService;
 use EEDSFoundation\Domain\StructureService;
+use EEDSFoundation\Domain\EedsExportService;
 use EEDSFoundation\Security\EedsExportPolicy;
 use EEDSFoundation\Domain\MemberLifecycle;
 use Galette\Core\Db;
@@ -23,8 +24,10 @@ use Laminas\Db\ResultSet\ResultSet;
 use Laminas\Db\Sql\Insert;
 use Laminas\Db\Sql\Select;
 use PHPUnit\Framework\TestCase;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 use function Safe\define;
+use function Safe\unlink;
 
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Access/EedsScope.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/AffiliationService.php';
@@ -33,6 +36,7 @@ require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Dom
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/DuplicatePreview.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/RenewalService.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/StructureService.php';
+require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/EedsExportService.php';
 
 if (!defined('PREFIX_DB')) {
     define('PREFIX_DB', value: 'galette_');
@@ -378,6 +382,104 @@ class EedsFoundationTest extends TestCase
             '2026-11-22',
             7
         );
+    }
+
+    /**
+     * National root initialization is idempotent.
+     */
+    public function testNationalRootInitializationReusesExistingRoot(): void
+    {
+        $result = new ResultSet();
+        $result->initialize([['id_structure' => 1]]);
+
+        $select = $this->createStub(Select::class);
+        $select->method('columns')->willReturnSelf();
+        $select->method('where')->willReturnSelf();
+
+        $database = $this->createMock(Db::class);
+        $database->expects($this->once())->method('beginTransaction');
+        $database->expects($this->once())->method('select')
+            ->with('eeds_structures')
+            ->willReturn($select);
+        $database->method('execute')->willReturn($result);
+        $database->expects($this->once())->method('commit');
+        $database->expects($this->never())->method('insert');
+
+        $this->assertSame(
+            1,
+            (new StructureService())->ensureNationalRoot(
+                $database,
+                'Nation',
+                'NATION',
+                '2026-11-22',
+                7
+            )
+        );
+    }
+
+    /**
+     * Structure types remain restricted to the documented hierarchy.
+     */
+    public function testStructureTypesFollowDocumentedHierarchy(): void
+    {
+        $this->assertSame(
+            ['national', 'region', 'district', 'groupe_local', 'unite'],
+            StructureService::ALLOWED_TYPES
+        );
+    }
+
+    /**
+     * XLSX export fails closed without an organizational scope.
+     */
+    public function testExportFailsClosedWithoutScope(): void
+    {
+        $database = $this->createMock(Db::class);
+        $database->expects($this->never())->method('select');
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new EedsExportService())->export($database, 7, []);
+    }
+
+    /**
+     * Scoped XLSX export creates a workbook and records an audit row.
+     */
+    public function testScopedExportCreatesXlsxAndAudit(): void
+    {
+        $empty = new ResultSet();
+        $empty->initialize([]);
+
+        $select = $this->createStub(Select::class);
+        $select->method('columns')->willReturnSelf();
+        $select->method('join')->willReturnSelf();
+        $select->method('where')->willReturnSelf();
+
+        $insert = $this->createStub(Insert::class);
+        $insert->method('values')->willReturnSelf();
+
+        $database = $this->createMock(Db::class);
+        $database->expects($this->once())->method('select')
+            ->willReturn($select);
+        $database->expects($this->once())->method('insert')
+            ->with('eeds_export_audit')
+            ->willReturn($insert);
+        $database->expects($this->exactly(2))->method('execute')
+            ->willReturn($empty);
+        $platform = $this->createStub(PlatformInterface::class);
+        $platform->method('quoteValue')->willReturnCallback(
+            static fn(string $value): string => "'" . $value . "'"
+        );
+        $database->method('__get')->with('platform')->willReturn($platform);
+
+        $export = (new EedsExportService())->export($database, 7, [10]);
+
+        $this->assertFileExists($export['path']);
+        $loaded = IOFactory::load($export['path']);
+        $this->assertSame('EEDS', $loaded->getActiveSheet()->getTitle());
+        $loaded->disconnectWorksheets();
+        $this->assertSame(0, $export['row_count']);
+        $this->assertContains('national_number', $export['fields']);
+
+        unlink($export['path']);
     }
 
     /**

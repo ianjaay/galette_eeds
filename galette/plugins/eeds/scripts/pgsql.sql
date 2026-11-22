@@ -156,3 +156,30 @@ BEGIN
     );
   END IF;
 END $$;
+
+INSERT INTO galette_eeds_structures (
+  parent_structure,
+  structure_type,
+  structure_code,
+  structure_name,
+  recognition_status,
+  effective_start,
+  effective_end,
+  created_at,
+  created_by
+)
+SELECT
+  NULL,
+  'national',
+  'NATION',
+  'Nation',
+  'recognized',
+  CURRENT_DATE,
+  NULL,
+  CURRENT_TIMESTAMP,
+  NULL
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM galette_eeds_structures
+  WHERE structure_type = 'national'
+);

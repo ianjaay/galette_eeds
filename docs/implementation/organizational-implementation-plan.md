@@ -23,8 +23,8 @@ Avant toute donnée réelle :
 7. fonctions exactes et titulaires ;
 8. autorité de nomination et durée des mandats ;
 9. règles de cumul, délégation et révocation ;
-10. champs d'export autorisés ;
-11. périmètre national/territorial des profils ;
+10. ~~champs d'export autorisés~~ — tous les champs applicatifs non secrets sont retenus pour R1 ;
+11. périmètre national/territorial exact des profils ;
 12. politique des mineurs, tuteurs et conservation.
 
 Les fonctions, titulaires, mandats, délégations et révocations sont distincts des gates R1 ci-dessus : ils constituent des décisions R2 et ne doivent pas être encodés pour satisfaire R1. Les gates de gouvernance des données et des accès restent obligatoires avant toute donnée réelle.
