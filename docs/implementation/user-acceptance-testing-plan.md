@@ -26,7 +26,12 @@ guardian where approved, and independent security/QA observers.
 ## Core scenarios
 
 1. Create and recognize a structure and verify hierarchical visibility.
-2. Create, admit, renew, transfer and retire a synthetic member.
+2. Créer, admettre, renouveler, transférer et retirer un membre synthétique.
+   Un transfert doit avoir une seule affiliation source active, dans le
+   périmètre de l'acteur à la date d'effet choisie ; les affiliations
+   historiques, futures ou hors périmètre ne doivent pas être modifiées.
+   Une transition de statut doit également vérifier l'affiliation du membre
+   à sa date d'effet, et non uniquement à la date du jour.
 3. Attempt access from sibling and unrelated structures; expect denial.
 4. Create, expire and revoke a mandate; verify authorization changes.
 5. Create and reconcile a contribution, exemption and receipt.
@@ -79,6 +84,12 @@ Environnement temporaire MySQL/MariaDB du 2026-11-22 :
 Ces résultats ne prouvent pas un export de données PDF/CSV réel : le code
 EEDS actuel enregistre uniquement les métadonnées de l'appel. Aucun fichier
 exporté n'a été vérifié.
+
+Depuis le durcissement R1, la route d’export renvoie HTTP 501 avec une erreur
+explicite au lieu de déclarer la réussite d’un export qui ne produit aucun
+fichier. La liste exacte des champs autorisés doit être approuvée avant la
+génération d’un fichier ; l’ancien résultat HTTP 200 ne vaut donc pas preuve
+d’acceptation de l’export.
 
 Le filtre Twig `|trans` du modèle EEDS a été corrigé avec les fonctions
 `_T(...)` utilisées par Galette. `twigcs` ne signale plus de violation.

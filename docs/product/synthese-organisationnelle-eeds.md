@@ -1,7 +1,7 @@
 # Synthèse organisationnelle EEDS pour le paramétrage Galette / R1
 
 - **Statut du document :** synthèse opérationnelle, non statutaire
-- **Base métier :** [dossier de référence EEDS](../../EEDS_2529_Dossier_reference_application.md)
+- **Base métier :** [dossier de référence EEDS consolidé](../../EEDS_2529_Dossier_reference_application_CONSOLIDE_GITHUB.md) ; [texte métier antérieur](../../EEDS_2529_Dossier_reference_application.md)
 - **Portée :** organiser les faits et les choix nécessaires au registre R1 ; ne remplace ni les statuts, ni leurs pièces sources, ni une décision formelle des EEDS.
 
 ## 1. Provenance et limites des sources
@@ -9,6 +9,14 @@
 Le dossier se présente comme une consolidation de documents statutaires, du précis de branche Toor-Toor wi, de la stratégie, du plan d’action et d’échanges antérieurs. Il demande explicitement de distinguer les règles documentées, les éléments à confirmer et les propositions ([dossier, avertissement, lignes 1–8](../../EEDS_2529_Dossier_reference_application.md#L1-L8)), et précise qu’il ne constitue pas une spécification finale approuvée ([limites du dossier, lignes 1388–1400](../../EEDS_2529_Dossier_reference_application.md#L1388-L1400)).
 
 Les pièces sources sous-jacentes ne sont pas toutes présentes séparément dans ce dépôt. La synthèse s’appuie donc sur le dossier consolidé et sur le contexte produit et technique du dépôt ; elle ne prétend pas avoir vérifié indépendamment chaque statut, précis, présentation ou plan cité ([contexte produit, ligne 132](project-context.md#L132) ; [liste des sources du dossier, à partir de la ligne 1452](../../EEDS_2529_Dossier_reference_application.md#L1452)).
+
+### Mise à jour de la référence consolidée
+
+La version consolidée comporte 2 485 lignes. Ses 1 463 premières lignes sont identiques au texte métier antérieur ; elle ajoute un inventaire conceptuel de données et de modèles ([annexe, lignes 1465–2088](../../EEDS_2529_Dossier_reference_application_CONSOLIDE_GITHUB.md#L1465-L2088)) ainsi qu’une annexe issue du dépôt historique `ianjaay/GalleApp1`, branche `chore/mac-dev-redeploy`, consulté le 22 novembre 2026 ([annexe, lignes 2090–2485](../../EEDS_2529_Dossier_reference_application_CONSOLIDE_GITHUB.md#L2090-L2485)).
+
+Ces ajouts sont des sources de cadrage supplémentaires, non des décisions approuvées. L’annexe GalleApp1 décrit Hitobito/Rails, ses groupes, rôles, permissions, modules et mappings PBS→EEDS ; ils ne décrivent pas l’architecture de ce dépôt, qui demeure Galette/Slim/PHP. Les objets, modules et profils cités doivent être rapprochés du code et des décisions du projet avant toute mise en œuvre. Ils ne changent ni l’approbation du périmètre R1 ni les questions métier ouvertes.
+
+L’annexe énumère aussi des fonctions candidates supplémentaires (par exemple président, trésorier, secrétaire général, responsables de communication, de formation ou de programme, et Njiit/Reefaan/Rambeen). Elle précise que ces postes sont des exemples issus des documents, non une nomenclature exhaustive approuvée ([annexe, lignes 2242–2254](../../EEDS_2529_Dossier_reference_application_CONSOLIDE_GITHUB.md#L2242-L2254)). Ils ne doivent donc pas être ajoutés comme fonctions effectives ni traduits en permissions sans validation. Le terme « Dental » apparaît comme autre appellation de Ñawka dans cette annexe ([lignes 2140–2148](../../EEDS_2529_Dossier_reference_application_CONSOLIDE_GITHUB.md#L2140-L2148)) ; il est conservé comme alias à vérifier, sans remplacer le terme Ñawka du texte principal.
 
 Le dossier cite les originaux suivants : les statuts EEDS, le précis de branche TOOR TOOR WI — Programme national des jeunes, le document et la présentation de la nouvelle stratégie EEDS, le plan d’action EN-EEDS 2025, ainsi que l’historique des discussions et du cadrage `eeds_membership` / Frappe-ERPNext ([dossier, § 26, lignes 1452–1458](../../EEDS_2529_Dossier_reference_application.md#L1452-L1458)). Ces fichiers originaux n’ont pas été retrouvés séparément dans l’espace de travail consulté ; ils n’ont donc pas été vérifiés indépendamment.
 

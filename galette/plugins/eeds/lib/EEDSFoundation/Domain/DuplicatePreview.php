@@ -14,6 +14,7 @@ use Galette\Core\Db;
 use Throwable;
 use Galette\Core\Logs;
 use Analog\Analog;
+use Safe\DateTimeImmutable;
 
 /**
  * Read-only R1 duplicate candidate preview.
@@ -23,77 +24,123 @@ use Analog\Analog;
 final readonly class DuplicatePreview
 {
     /**
+     * @param list<int> $structure_ids
      * @return list<array{left_member_id:int,right_member_id:int,match_fields:list<string>,confidence:string}>
      */
-    public function preview(Db $zdb): array
+    public function preview(Db $zdb, array $structure_ids): array
     {
+        if ($structure_ids === []) {
+            return [];
+        }
+
         try {
-            $select = $zdb->select('adherents');
+            $select = $zdb->select('adherents', 'a');
             $select->columns([
-                'id_adh',
-                'nom_adh',
-                'prenom_adh',
-                'ddn_adh',
-                'login_adh',
-                'email_adh',
-                'gsm_adh',
-                'tel_adh',
-                'num_adh',
+                'a.id_adh',
+                'a.nom_adh',
+                'a.prenom_adh',
+                'a.ddn_adh',
+                'a.login_adh',
+                'a.email_adh',
+                'n.national_number',
             ]);
+            $select->quantifier('DISTINCT');
+            $select->join(
+                name: ['aff' => PREFIX_DB . 'eeds_member_affiliations'],
+                on: 'a.id_adh=aff.id_adh',
+                columns: [],
+                type: $select::JOIN_INNER
+            )->join(
+                name: ['n' => PREFIX_DB . 'eeds_member_numbers'],
+                on: 'a.id_adh=n.id_adh',
+                columns: [],
+                type: $select::JOIN_LEFT
+            );
+            $select->where([
+                'aff.id_structure' => $structure_ids,
+                'aff.affiliation_status' => 'active',
+            ]);
+            $date = (new DateTimeImmutable())->format('Y-m-d');
+            $select->where('aff.effective_start <= ' . $zdb->platform->quoteValue($date));
+            $select->where(
+                '(aff.effective_end IS NULL OR aff.effective_end >= '
+                . $zdb->platform->quoteValue($date)
+                . ')'
+            );
 
             $rows = [];
             foreach ($zdb->execute($select) as $row) {
                 $rows[(int)$row->id_adh] = $row;
             }
 
-            $candidates = [];
-            $ids = array_keys($rows);
-            for ($left = 0; $left < count($ids); $left++) {
-                for ($right = $left + 1; $right < count($ids); $right++) {
-                    $a = $rows[$ids[$left]];
-                    $b = $rows[$ids[$right]];
-                    $matches = [];
+            $groups = [
+                'national_number' => [],
+                'email' => [],
+                'login' => [],
+                'name_birthdate' => [],
+            ];
+            foreach ($rows as $member_id => $row) {
+                $national_number = trim((string)($row->national_number ?? ''));
+                if ($national_number !== '') {
+                    $groups['national_number'][$national_number][] = $member_id;
+                }
 
-                    $national_a = trim((string)($a->num_adh ?? ''));
-                    $national_b = trim((string)($b->num_adh ?? ''));
-                    if ($national_a !== '' && $national_a === $national_b) {
-                        $matches[] = 'national_number';
-                    }
+                $email = mb_strtolower(trim((string)($row->email_adh ?? '')));
+                if ($email !== '') {
+                    $groups['email'][$email][] = $member_id;
+                }
 
-                    $email_a = mb_strtolower(trim((string)($a->email_adh ?? '')));
-                    $email_b = mb_strtolower(trim((string)($b->email_adh ?? '')));
-                    if ($email_a !== '' && $email_a === $email_b) {
-                        $matches[] = 'email';
-                    }
+                $login = mb_strtolower(trim((string)($row->login_adh ?? '')));
+                if ($login !== '') {
+                    $groups['login'][$login][] = $member_id;
+                }
 
-                    $login_a = mb_strtolower(trim((string)($a->login_adh ?? '')));
-                    $login_b = mb_strtolower(trim((string)($b->login_adh ?? '')));
-                    if ($login_a !== '' && $login_a === $login_b) {
-                        $matches[] = 'login';
-                    }
+                $name = mb_strtolower(trim((string)$row->prenom_adh . ' ' . (string)$row->nom_adh));
+                $birth_date = (string)($row->ddn_adh ?? '');
+                if ($name !== '' && $birth_date !== '') {
+                    $groups['name_birthdate'][$name . "\0" . $birth_date][] = $member_id;
+                }
+            }
 
-                    $name_a = mb_strtolower(trim((string)$a->prenom_adh . ' ' . (string)$a->nom_adh));
-                    $name_b = mb_strtolower(trim((string)$b->prenom_adh . ' ' . (string)$b->nom_adh));
-                    $birth_a = (string)($a->ddn_adh ?? '');
-                    $birth_b = (string)($b->ddn_adh ?? '');
-                    if ($name_a !== '' && $name_a === $name_b && $birth_a !== '' && $birth_a === $birth_b) {
-                        $matches[] = 'name_birthdate';
-                    }
-
-                    if ($matches !== []) {
-                        $confidence = in_array('national_number', $matches, true)
-                            || in_array('name_birthdate', $matches, true)
-                            ? 'high'
-                            : 'medium';
-                        $candidates[] = [
-                            'left_member_id' => (int)$a->id_adh,
-                            'right_member_id' => (int)$b->id_adh,
-                            'match_fields' => $matches,
-                            'confidence' => $confidence,
-                        ];
+            $candidates_by_pair = [];
+            foreach ($groups as $match_field => $values) {
+                foreach ($values as $member_ids) {
+                    sort($member_ids, SORT_NUMERIC);
+                    for ($left = 0; $left < count($member_ids); $left++) {
+                        for ($right = $left + 1; $right < count($member_ids); $right++) {
+                            $left_id = $member_ids[$left];
+                            $right_id = $member_ids[$right];
+                            $key = $left_id . ':' . $right_id;
+                            $candidates_by_pair[$key] ??= [
+                                'left_member_id' => $left_id,
+                                'right_member_id' => $right_id,
+                                'match_fields' => [],
+                            ];
+                            $candidates_by_pair[$key]['match_fields'][] = $match_field;
+                        }
                     }
                 }
             }
+
+            $candidates = array_values($candidates_by_pair);
+            usort(
+                $candidates,
+                static fn(array $left, array $right): int => [
+                    $left['left_member_id'],
+                    $left['right_member_id'],
+                ] <=> [
+                    $right['left_member_id'],
+                    $right['right_member_id'],
+                ]
+            );
+            foreach ($candidates as &$candidate) {
+                $candidate['confidence'] = in_array('national_number', $candidate['match_fields'], true)
+                    || in_array('name_birthdate', $candidate['match_fields'], true)
+                    ? 'high'
+                    : 'medium';
+            }
+            unset($candidate);
+
             return $candidates;
         } catch (Throwable $e) {
             Logs::exception($e, 'Unable to preview EEDS duplicate members', Analog::WARNING);

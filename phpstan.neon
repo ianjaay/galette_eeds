@@ -28,6 +28,7 @@ parameters:
         - galette/config/config.inc.php.dist
     scanDirectories:
         - galette/includes/
+        - galette/plugins/eeds/lib/
     dynamicConstantNames:
         - GALETTE_BASE_PATH
         - GALETTE_ROOT

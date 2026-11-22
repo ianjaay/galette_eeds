@@ -20,6 +20,12 @@ Les appellations exactes, les secteurs, les périmètres et les responsabilités
 
 Les responsables pédagogiques/conseillers de progression et les formateurs sont cités dans les profils et parcours proposés ([lignes 819–826](../../EEDS_2529_Dossier_reference_application.md#L819-L826)). Ils ne sont pas ajoutés à la liste stricte des fonctions statutaires [ligne 362–375](../../EEDS_2529_Dossier_reference_application.md#L362-L375) ; leur modèle reste donc une proposition à valider.
 
+### Complément de l’annexe consolidée
+
+L’annexe issue du dépôt historique GalleApp1/Hitobito énumère d’autres postes candidats : Président, Commissaire International, Trésorier National, Secrétaire Général, responsables de communication, digital, formation et programme, ainsi que des fonctions de trésorerie, secrétariat, matériel et relations avec les parents aux niveaux territoriaux ([annexe, lignes 2242–2254](../../EEDS_2529_Dossier_reference_application_CONSOLIDE_GITHUB.md#L2242-L2254)). Elle cite également Njiit, Reefaan et Rambeen pour les unités. L’annexe qualifie elle-même ces listes d’exemples non exhaustifs ; leur source et leur statut ne permettent pas de les traiter comme une nomenclature statutaire approuvée. Elles sont à rapprocher des statuts et à valider avant toute configuration.
+
+L’annexe propose aussi un mapping technique PBS/Hitobito, des types de rôles et des permissions. Ces éléments sont historiques et spécifiques à Hitobito ; ils ne constituent ni des fonctions effectivement configurées dans Galette ni une matrice d’autorisations approuvée pour EEDS.
+
 ## 2. Modèle proposé
 
 Le dossier propose de distinguer :

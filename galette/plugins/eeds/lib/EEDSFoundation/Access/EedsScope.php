@@ -36,6 +36,35 @@ final readonly class EedsScope
     }
 
     /**
+     * Is a member currently affiliated with a structure within this scope?
+     */
+    public function allowsMember(Db $zdb, int $member_id, ?string $effective_date = null): bool
+    {
+        if ($member_id <= 0 || $this->structure_ids === []) {
+            return false;
+        }
+
+        $date = $effective_date ?? (new DateTimeImmutable())->format('Y-m-d');
+        $select = $zdb->select('eeds_member_affiliations');
+        $select->columns(['id_structure'])->where([
+            'id_adh' => $member_id,
+            'affiliation_status' => 'active',
+        ]);
+        $select->where('effective_start <= ' . $zdb->platform->quoteValue($date));
+        $select->where('(effective_end IS NULL OR effective_end >= ' . $zdb->platform->quoteValue($date) . ')');
+
+        $has_affiliation = false;
+        foreach ($zdb->execute($select) as $row) {
+            $has_affiliation = true;
+            if (!$this->allowsStructure((int)$row->id_structure)) {
+                return false;
+            }
+        }
+
+        return $has_affiliation;
+    }
+
+    /**
      * @param list<int> $structure_ids
      * @return list<int>
      */
@@ -73,13 +102,20 @@ final readonly class EedsScope
         ?string $effective_date = null
     ): array {
         $date = $effective_date ?? (new DateTimeImmutable())->format('Y-m-d');
-        $select = $zdb->select('eeds_member_scopes');
-        $select->columns(['id_structure'])->where([
-            'id_adh' => $member_id,
-            'scope_permission' => $permission,
+        $select = $zdb->select('eeds_member_scopes', 'ms');
+        $select->columns(['ms.id_structure'])->join(
+            name: ['st' => PREFIX_DB . 'eeds_structures'],
+            on: 'ms.id_structure=st.id_structure',
+            columns: [],
+            type: $select::JOIN_INNER
+        )->where([
+            'ms.id_adh' => $member_id,
+            'ms.scope_permission' => $permission,
         ]);
-        $select->where('effective_start <= ' . $zdb->platform->quoteValue($date));
-        $select->where('(effective_end IS NULL OR effective_end >= ' . $zdb->platform->quoteValue($date) . ')');
+        $select->where('ms.effective_start <= ' . $zdb->platform->quoteValue($date));
+        $select->where('(ms.effective_end IS NULL OR ms.effective_end >= ' . $zdb->platform->quoteValue($date) . ')');
+        $select->where('st.effective_start <= ' . $zdb->platform->quoteValue($date));
+        $select->where('(st.effective_end IS NULL OR st.effective_end >= ' . $zdb->platform->quoteValue($date) . ')');
 
         $roots = [];
         foreach ($zdb->execute($select) as $row) {
@@ -92,6 +128,8 @@ final readonly class EedsScope
             $current = array_shift($queue);
             $children = $zdb->select('eeds_structures');
             $children->columns(['id_structure'])->where(['parent_structure' => $current]);
+            $children->where('effective_start <= ' . $zdb->platform->quoteValue($date));
+            $children->where('(effective_end IS NULL OR effective_end >= ' . $zdb->platform->quoteValue($date) . ')');
             foreach ($zdb->execute($children) as $row) {
                 $child = (int)$row->id_structure;
                 if (!isset($roots[$child])) {

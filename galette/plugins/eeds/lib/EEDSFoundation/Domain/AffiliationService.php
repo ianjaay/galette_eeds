@@ -25,11 +25,14 @@ final readonly class AffiliationService
 {
     /**
      * Close an active affiliation and create a dated transfer.
+     *
+     * @param list<int> $allowed_structure_ids
      */
     public function transfer(
         Db $zdb,
         int $member_id,
         int $structure_id,
+        array $allowed_structure_ids,
         ?string $branch,
         ?string $unit,
         ?string $subgroup,
@@ -43,8 +46,47 @@ final readonly class AffiliationService
             throw new \InvalidArgumentException('Invalid effective date.');
         }
 
+        if (
+            $allowed_structure_ids === []
+            || !in_array($structure_id, $allowed_structure_ids, strict: true)
+        ) {
+            Analog::log(
+                'EEDS transfer rejected: target structure is outside the authorized scope',
+                Analog::INFO
+            );
+            return false;
+        }
+
         try {
             $zdb->beginTransaction();
+
+            $source = $zdb->select('eeds_member_affiliations');
+            $source->columns(['id_structure'])->where([
+                'id_adh' => $member_id,
+                'affiliation_status' => 'active',
+            ]);
+            $source->where('effective_start <= ' . $zdb->platform->quoteValue($effective_date));
+            $source->where(
+                '(effective_end IS NULL OR effective_end >= '
+                . $zdb->platform->quoteValue($effective_date)
+                . ')'
+            );
+
+            $source_structure_ids = [];
+            foreach ($zdb->execute($source) as $row) {
+                $source_structure_ids[] = (int)$row->id_structure;
+            }
+            if (
+                count($source_structure_ids) !== 1
+                || !in_array($source_structure_ids[0], $allowed_structure_ids, strict: true)
+            ) {
+                $zdb->rollback();
+                Analog::log(
+                    'EEDS transfer rejected: exactly one active in-scope source affiliation is required',
+                    Analog::INFO
+                );
+                return false;
+            }
 
             $update = $zdb->update('eeds_member_affiliations');
             $update->set([
@@ -53,9 +95,23 @@ final readonly class AffiliationService
             ]);
             $update->where([
                 'id_adh' => $member_id,
+                'id_structure' => $source_structure_ids[0],
                 'affiliation_status' => 'active',
             ]);
-            $zdb->execute($update);
+            $update->where('effective_start <= ' . $zdb->platform->quoteValue($effective_date));
+            $update->where(
+                '(effective_end IS NULL OR effective_end >= '
+                . $zdb->platform->quoteValue($effective_date)
+                . ')'
+            );
+            if ($zdb->execute($update)->getAffectedRows() !== 1) {
+                $zdb->rollback();
+                Analog::log(
+                    'EEDS transfer rejected: source affiliation changed before the transfer',
+                    Analog::INFO
+                );
+                return false;
+            }
 
             $insert = $zdb->insert('eeds_member_affiliations');
             $insert->values([

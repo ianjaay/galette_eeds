@@ -11,14 +11,13 @@ declare(strict_types=1);
 namespace EEDSFoundation\Controllers;
 
 use Safe\DateTimeImmutable;
+use EEDSFoundation\Access\EedsScope;
 use EEDSFoundation\Domain\AffiliationService;
 use EEDSFoundation\Domain\DuplicatePreview;
 use EEDSFoundation\Domain\MemberLifecycle;
 use EEDSFoundation\Domain\RegistryRepository;
 use EEDSFoundation\Domain\RenewalService;
 use EEDSFoundation\Domain\StructureService;
-use EEDSFoundation\Domain\ExportService;
-use EEDSFoundation\Access\EedsScope;
 use Galette\Controllers\Attributes\Route;
 use Galette\Controllers\AbstractController;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -47,27 +46,14 @@ class RegistryController extends AbstractController
             return $response->withStatus(403);
         }
 
-        $scope_ids = EedsScope::forMember(
-            $this->zdb,
-            (int)$this->login->id,
-            'eeds:read'
-        );
-        if ($scope_ids === []) {
+        $scope = $this->scopeFor('eeds:read');
+        if ($scope->getStructureIds() === []) {
             return $response->withStatus(403);
         }
-        $scope = new EedsScope($scope_ids);
 
         $repository = new RegistryRepository();
-        $structures = $repository->structures($this->zdb);
-        $affiliations = $repository->affiliations($this->zdb);
-        $structures = array_values(array_filter(
-            $structures,
-            fn(array $structure): bool => $scope->allowsStructure((int)$structure['id_structure'])
-        ));
-        $affiliations = array_values(array_filter(
-            $affiliations,
-            fn(array $affiliation): bool => $scope->allowsStructure((int)$affiliation['id_structure'])
-        ));
+        $structures = $repository->structures($this->zdb, $scope->getStructureIds());
+        $affiliations = $repository->affiliations($this->zdb, $scope->getStructureIds());
 
         $this->view->render(
             $response,
@@ -100,17 +86,34 @@ class RegistryController extends AbstractController
             $post = [];
         }
 
-        $service = new StructureService();
-        $id = $service->create(
-            $this->zdb,
-            isset($post['parent_structure']) ? (int)$post['parent_structure'] : null,
-            (string)($post['structure_type'] ?? ''),
-            (string)($post['structure_code'] ?? ''),
-            (string)($post['structure_name'] ?? ''),
-            (string)($post['recognition_status'] ?? 'pending'),
-            (string)($post['effective_start'] ?? date('Y-m-d')),
-            (int)$this->login->id
-        );
+        $parent_structure = isset($post['parent_structure'])
+            ? (int)$post['parent_structure']
+            : null;
+        $scope = $this->scopeFor('eeds:structure-create');
+        if ($parent_structure === null || !$scope->allowsStructure($parent_structure)) {
+            return $response->withStatus(403);
+        }
+
+        try {
+            $service = new StructureService();
+            $id = $service->create(
+                $this->zdb,
+                $parent_structure,
+                (string)($post['structure_type'] ?? ''),
+                (string)($post['structure_code'] ?? ''),
+                (string)($post['structure_name'] ?? ''),
+                (string)($post['recognition_status'] ?? 'pending'),
+                (string)($post['effective_start'] ?? date('Y-m-d')),
+                (int)$this->login->id
+            );
+        } catch (\InvalidArgumentException $e) {
+            // no log: expected validation failure; the exception message describes the invalid input
+            $payload = json_encode(['success' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            $response->getBody()->write($payload);
+            return $response
+                ->withHeader('Content-Type', 'application/json')
+                ->withStatus(400);
+        }
 
         $payload = json_encode(['success' => true, 'id_structure' => $id], JSON_UNESCAPED_UNICODE);
         $response->getBody()->write($payload);
@@ -138,11 +141,22 @@ class RegistryController extends AbstractController
             $post = [];
         }
 
+        $effective_date = (string)($post['effective_date'] ?? date('Y-m-d'));
+        if (
+            !$this->scopeFor('eeds:validate')->allowsMember(
+                $this->zdb,
+                $id,
+                $effective_date
+            )
+        ) {
+            return $response->withStatus(403);
+        }
+
         $ok = (new MemberLifecycle())->transition(
             $this->zdb,
             $id,
             (string)($post['status'] ?? ''),
-            (string)($post['effective_date'] ?? date('Y-m-d')),
+            $effective_date,
             (int)$this->login->id,
             (string)($post['reason'] ?? ''),
             isset($post['evidence_reference']) ? (string)$post['evidence_reference'] : null
@@ -172,22 +186,43 @@ class RegistryController extends AbstractController
             $post = [];
         }
 
+        $structure_id = (int)($post['structure_id'] ?? 0);
+        $effective_date = (string)($post['effective_date'] ?? date('Y-m-d'));
+        $scope = $this->scopeFor('eeds:validate');
+        if (
+            !$scope->allowsMember($this->zdb, $id, $effective_date)
+            || !$scope->allowsStructure($structure_id)
+        ) {
+            return $response->withStatus(403);
+        }
+
         $ok = (new AffiliationService())->transfer(
             $this->zdb,
             $id,
-            (int)($post['structure_id'] ?? 0),
+            $structure_id,
+            $scope->getStructureIds(),
             isset($post['branch']) ? (string)$post['branch'] : null,
             isset($post['unit']) ? (string)$post['unit'] : null,
             isset($post['subgroup']) ? (string)$post['subgroup'] : null,
-            (string)($post['effective_date'] ?? date('Y-m-d')),
+            $effective_date,
             (int)$this->login->id,
             (string)($post['reason'] ?? ''),
             isset($post['evidence_reference']) ? (string)$post['evidence_reference'] : null
         );
 
-        $payload = json_encode(['success' => $ok], JSON_UNESCAPED_UNICODE);
+        $payload = json_encode(
+            $ok
+                ? ['success' => true]
+                : [
+                    'success' => false,
+                    'error' => 'Transfer requires exactly one active in-scope affiliation for the selected date.',
+                ],
+            JSON_UNESCAPED_UNICODE
+        );
         $response->getBody()->write($payload);
-        return $response->withHeader('Content-Type', 'application/json');
+        return $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withStatus($ok ? 200 : 409);
     }
 
     /**
@@ -201,6 +236,10 @@ class RegistryController extends AbstractController
     public function renew(Request $request, Response $response, int $id): Response
     {
         if (!$this->accessControl->can('eeds:validate')) {
+            return $response->withStatus(403);
+        }
+
+        if (!$this->scopeFor('eeds:validate')->allowsMember($this->zdb, $id)) {
             return $response->withStatus(403);
         }
 
@@ -239,8 +278,19 @@ class RegistryController extends AbstractController
             return $response->withStatus(403);
         }
 
+        $scope = $this->scopeFor('eeds:read');
+        if ($scope->getStructureIds() === []) {
+            return $response->withStatus(403);
+        }
+
         $payload = json_encode(
-            ['success' => true, 'candidates' => (new DuplicatePreview())->preview($this->zdb)],
+            [
+                'success' => true,
+                'candidates' => (new DuplicatePreview())->preview(
+                    $this->zdb,
+                    $scope->getStructureIds()
+                ),
+            ],
             JSON_UNESCAPED_UNICODE
         );
         $response->getBody()->write($payload);
@@ -258,6 +308,29 @@ class RegistryController extends AbstractController
     public function reviewDuplicate(Request $request, Response $response, int $id): Response
     {
         if (!$this->accessControl->can('eeds:validate')) {
+            return $response->withStatus(403);
+        }
+
+        $scope = $this->scopeFor('eeds:validate');
+        if ($scope->getStructureIds() === []) {
+            return $response->withStatus(403);
+        }
+
+        $select = $this->zdb->select('eeds_duplicate_candidates');
+        $select->columns(['left_member_id', 'right_member_id'])->where(['id_candidate' => $id]);
+        $candidate = $this->zdb->execute($select);
+        if ($candidate->count() === 0) {
+            return $response->withStatus(404);
+        }
+        $candidate = $candidate->current();
+        if (!is_array($candidate) && !is_object($candidate)) {
+            return $response->withStatus(404);
+        }
+        $candidate = (array)$candidate;
+        if (
+            !$scope->allowsMember($this->zdb, (int)($candidate['left_member_id'] ?? 0))
+            || !$scope->allowsMember($this->zdb, (int)($candidate['right_member_id'] ?? 0))
+        ) {
             return $response->withStatus(403);
         }
 
@@ -299,6 +372,10 @@ class RegistryController extends AbstractController
     public function memberNumber(Request $request, Response $response, int $id): Response
     {
         if (!$this->accessControl->can('eeds:validate')) {
+            return $response->withStatus(403);
+        }
+
+        if (!$this->scopeFor('eeds:validate')->allowsMember($this->zdb, $id)) {
             return $response->withStatus(403);
         }
 
@@ -346,7 +423,7 @@ class RegistryController extends AbstractController
     }
 
     /**
-     * Record an allowed EEDS export.
+     * Generate an approved EEDS export.
      */
     #[Route(
         name: 'eeds_export',
@@ -359,34 +436,27 @@ class RegistryController extends AbstractController
             return $response->withStatus(403);
         }
 
-        $post = $request->getParsedBody();
-        if (!is_array($post)) {
-            $post = [];
-        }
+        $response->getBody()->write(json_encode(
+            [
+                'success' => false,
+                'error' => 'EEDS export is awaiting an approved field list.',
+            ],
+            JSON_UNESCAPED_UNICODE
+        ));
+        return $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withStatus(501);
+    }
 
-        $fields = isset($post['fields']) && is_array($post['fields'])
-            ? array_values(array_map('strval', $post['fields']))
-            : [];
-        $structure_ids = isset($post['structure_ids']) && is_array($post['structure_ids'])
-            ? array_values(array_map('intval', $post['structure_ids']))
-            : [];
-        $policy = new \EEDSFoundation\Security\EedsExportPolicy(
-            ['id', 'name', 'structure_id'],
-            $structure_ids
-        );
-        if (!$policy->allows($fields, $structure_ids)) {
-            return $response->withStatus(403);
-        }
-
-        $ok = (new ExportService())->record(
+    /**
+     * Resolve the current member's effective EEDS structure scope.
+     */
+    private function scopeFor(string $permission): EedsScope
+    {
+        return new EedsScope(EedsScope::forMember(
             $this->zdb,
             (int)$this->login->id,
-            $fields,
-            $structure_ids,
-            isset($post['row_count']) ? (int)$post['row_count'] : 0
-        );
-        $payload = json_encode(['success' => $ok], JSON_UNESCAPED_UNICODE);
-        $response->getBody()->write($payload);
-        return $response->withHeader('Content-Type', 'application/json');
+            $permission
+        ));
     }
 }

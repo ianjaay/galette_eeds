@@ -50,6 +50,25 @@ final readonly class StructureService
         }
 
         try {
+            $zdb->beginTransaction();
+
+            if ($parent_structure !== null) {
+                $parent = $zdb->select('eeds_structures');
+                $parent->columns(['id_structure'])->where(['id_structure' => $parent_structure]);
+                $parent->where('effective_start <= ' . $zdb->platform->quoteValue($effective_start));
+                $parent->where(
+                    '(effective_end IS NULL OR effective_end >= '
+                    . $zdb->platform->quoteValue($effective_start)
+                    . ')'
+                );
+                if ($zdb->execute($parent)->count() !== 1) {
+                    $zdb->rollback();
+                    throw new \InvalidArgumentException(
+                        'The parent structure does not exist or is not effective on the selected date.'
+                    );
+                }
+            }
+
             $insert = $zdb->insert('eeds_structures');
             $insert->values([
                 'parent_structure' => $parent_structure,
@@ -67,8 +86,12 @@ final readonly class StructureService
             $select = $zdb->select('eeds_structures');
             $select->columns(['id_structure'])->where(['structure_code' => trim($structure_code)]);
             $row = $zdb->execute($select)->current();
+            $zdb->commit();
             return (int)$row->id_structure;
         } catch (Throwable $e) {
+            if ($zdb->inTransaction()) {
+                $zdb->rollback();
+            }
             Logs::exception($e, 'Unable to create EEDS structure', Analog::WARNING);
             throw $e;
         }

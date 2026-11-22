@@ -45,6 +45,8 @@ final readonly class RenewalService
         }
 
         try {
+            $zdb->beginTransaction();
+
             $insert = $zdb->insert('eeds_renewals');
             $insert->values([
                 'id_adh' => $member_id,
@@ -62,18 +64,32 @@ final readonly class RenewalService
             $zdb->execute($insert);
 
             if ($validated) {
-                (new MemberLifecycle())->transition(
-                    $zdb,
-                    $member_id,
-                    $resulting_status,
-                    (new DateTimeImmutable())->format('Y-m-d'),
-                    $validator_id,
-                    'Annual membership renewal',
-                    null
-                );
+                $select = $zdb->select('eeds_member_lifecycle');
+                $select->columns(['membership_status'])->where(['id_adh' => $member_id]);
+                $result = $zdb->execute($select);
+                $current_status = $result->count() > 0
+                    ? (string)$result->current()->membership_status
+                    : null;
+
+                if ($current_status !== $resulting_status) {
+                    (new MemberLifecycle())->transitionWithinTransaction(
+                        $zdb,
+                        $member_id,
+                        $resulting_status,
+                        (new DateTimeImmutable())->format('Y-m-d'),
+                        $validator_id,
+                        'Annual membership renewal',
+                        null
+                    );
+                }
             }
+
+            $zdb->commit();
             return true;
         } catch (Throwable $e) {
+            if ($zdb->inTransaction()) {
+                $zdb->rollback();
+            }
             Logs::exception($e, 'Unable to record EEDS renewal', Analog::WARNING);
             throw $e;
         }

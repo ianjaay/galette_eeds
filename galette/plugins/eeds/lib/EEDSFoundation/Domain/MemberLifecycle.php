@@ -48,6 +48,56 @@ final readonly class MemberLifecycle
         string $reason,
         ?string $evidence_reference = null
     ): bool {
+        return $this->applyTransition(
+            $zdb,
+            $member_id,
+            $new_status,
+            $effective_date,
+            $actor_id,
+            $reason,
+            $evidence_reference,
+            true
+        );
+    }
+
+    /**
+     * Apply a transition within a transaction owned by the caller.
+     */
+    public function transitionWithinTransaction(
+        Db $zdb,
+        int $member_id,
+        string $new_status,
+        string $effective_date,
+        int $actor_id,
+        string $reason,
+        ?string $evidence_reference = null
+    ): bool {
+        if (!$zdb->inTransaction()) {
+            throw new \LogicException('A caller-owned transaction is required.');
+        }
+
+        return $this->applyTransition(
+            $zdb,
+            $member_id,
+            $new_status,
+            $effective_date,
+            $actor_id,
+            $reason,
+            $evidence_reference,
+            false
+        );
+    }
+
+    private function applyTransition(
+        Db $zdb,
+        int $member_id,
+        string $new_status,
+        string $effective_date,
+        int $actor_id,
+        string $reason,
+        ?string $evidence_reference,
+        bool $manage_transaction
+    ): bool {
         if (!in_array($new_status, self::STATUSES, strict: true)) {
             throw new \InvalidArgumentException('Unknown EEDS membership status.');
         }
@@ -58,6 +108,10 @@ final readonly class MemberLifecycle
         }
 
         try {
+            if ($manage_transaction) {
+                $zdb->beginTransaction();
+            }
+
             $select = $zdb->select('eeds_member_lifecycle');
             $select->columns(['membership_status'])->where(['id_adh' => $member_id]);
             $result = $zdb->execute($select);
@@ -69,8 +123,6 @@ final readonly class MemberLifecycle
             if (!$allowed) {
                 throw new \InvalidArgumentException('This R1 membership transition is not allowed.');
             }
-
-            $zdb->beginTransaction();
 
             $insert = $zdb->insert('eeds_status_history');
             $insert->values([
@@ -107,10 +159,12 @@ final readonly class MemberLifecycle
                 $zdb->execute($update);
             }
 
-            $zdb->commit();
+            if ($manage_transaction) {
+                $zdb->commit();
+            }
             return true;
         } catch (Throwable $e) {
-            if ($zdb->inTransaction()) {
+            if ($manage_transaction && $zdb->inTransaction()) {
                 $zdb->rollback();
             }
             Logs::exception($e, 'Unable to transition EEDS member lifecycle', Analog::WARNING);

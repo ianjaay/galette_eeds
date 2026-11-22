@@ -23,12 +23,18 @@ use Analog\Analog;
 final readonly class RegistryRepository
 {
     /**
+     * @param list<int> $structure_ids
      * @return list<array<string,mixed>>
      */
-    public function structures(Db $zdb): array
+    public function structures(Db $zdb, array $structure_ids): array
     {
+        if ($structure_ids === []) {
+            return [];
+        }
+
         try {
             $select = $zdb->select('eeds_structures');
+            $select->where(['id_structure' => $structure_ids]);
             $select->order('structure_name ASC');
             $rows = [];
             foreach ($zdb->execute($select) as $row) {
@@ -42,15 +48,18 @@ final readonly class RegistryRepository
     }
 
     /**
+     * @param list<int> $structure_ids
      * @return list<array<string,mixed>>
      */
-    public function affiliations(Db $zdb, ?int $structure_id = null): array
+    public function affiliations(Db $zdb, array $structure_ids): array
     {
+        if ($structure_ids === []) {
+            return [];
+        }
+
         try {
             $select = $zdb->select('eeds_member_affiliations');
-            if ($structure_id !== null) {
-                $select->where(['id_structure' => $structure_id]);
-            }
+            $select->where(['id_structure' => $structure_ids]);
             $select->order('effective_start DESC');
             $rows = [];
             foreach ($zdb->execute($select) as $row) {
