@@ -21,8 +21,11 @@ use EEDSFoundation\Domain\StructureService;
 use EEDSFoundation\Domain\EedsExportService;
 use Galette\Controllers\Attributes\Route;
 use Galette\Controllers\AbstractController;
+use Galette\Core\Logs;
 use Psr\Http\Message\ResponseInterface as Response;
 use Slim\Psr7\Request;
+use Analog\Analog;
+use Throwable;
 
 use function Safe\json_encode;
 use function Safe\file_get_contents;
@@ -450,16 +453,32 @@ class RegistryController extends AbstractController
             (int)$this->login->id,
             $scope->getStructureIds()
         );
-        $content = file_get_contents($export['path']);
-        unlink($export['path']);
-        if ($content === false) {
-            throw new \RuntimeException('Unable to read the generated EEDS XLSX file.');
+        $read_succeeded = false;
+        try {
+            $content = file_get_contents($export['path']);
+            $read_succeeded = true;
+        } finally {
+            try {
+                unlink($export['path']);
+            } catch (Throwable $cleanup_exception) {
+                Logs::exception(
+                    $cleanup_exception,
+                    'Unable to remove the completed EEDS XLSX export file',
+                    Analog::WARNING
+                );
+                if ($read_succeeded) {
+                    throw $cleanup_exception;
+                }
+            }
         }
 
         $response->getBody()->write($content);
         return $response
             ->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            ->withHeader('Content-Disposition', 'attachment; filename="eeds-export.xlsx"');
+            ->withHeader('Content-Disposition', 'attachment; filename="eeds-export.xlsx"')
+            ->withHeader('Cache-Control', 'no-store, private')
+            ->withHeader('Pragma', 'no-cache')
+            ->withHeader('X-Content-Type-Options', 'nosniff');
     }
 
     /**

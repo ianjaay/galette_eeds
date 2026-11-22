@@ -24,7 +24,7 @@
 | Admission, renewal, transfer and status transitions | Membership policy | Modèle d’événements R1 approuvé ; autorités, périodes et validations détaillées à préciser |
 | Identifier and duplicate/merge procedure | Data-governance decision | Identifiant technique Galette, aperçu des doublons et absence de fusion automatique approuvés ; critères détaillés ouverts |
 | Minor, guardian, consent and retention policy | Safeguarding/privacy approval | Portails et données sensibles non approuvés pour R1 ; champs minimum, consentement et conservation ouverts |
-| Export fields and national/territorial rights | Security/product approval | XLSX approuvé ; tous les champs applicatifs non secrets ont été retenus pour la première version ; droits par permission/périmètre et profils nationaux/régionaux/district/groupe approuvés ; sélecteur configurable futur et rétention ouverts |
+| Export fields and national/territorial rights | Security/product approval | XLSX approuvé ; tous les champs applicatifs non secrets ont été retenus pour la première version ; quatre profils d'export approuvés et rôles Galette dédiés initialisés sans affectation nominative ni scope automatique ; sélecteur configurable futur et rétention ouverts |
 | Fee, exemption and good-standing policy | Finance approval | Référence seulement dans R1 ; politique financière à décider pour R3 |
 | MFA, privileged access and session policy | Security approval | Ouvert |
 | Hosting, backup, recovery and incident policy | Operations approval | Ouvert |

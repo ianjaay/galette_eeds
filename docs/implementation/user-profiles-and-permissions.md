@@ -1,7 +1,7 @@
 # Profils utilisateurs et permissions
 
 - **Statut :** inventaire technique et sécurité
-- **Décision :** aucune matrice fonction → permission → périmètre n'est approuvée pour les profils nominatifs
+- **Décision :** les quatre profils nommés ci-dessous sont approuvés uniquement pour l'export R1. Les titulaires, mandats et autres droits restent hors R1.
 
 ## 1. Mechanismes natifs Galette
 
@@ -9,9 +9,35 @@ Galette utilise des rôles système, des rôles explicites, des permissions nomm
 
 Le super-administrateur reçoit toutes les permissions. Les rôles système reçoivent les permissions nouvelles selon leur niveau d'accès. Un rôle de groupe peut accorder une permission sur un groupe seulement.
 
-## 2. Profils EEDS envisagés
+## 2. Profils et rôles d'export R1
 
-Le dossier propose, mais ne confirme pas comme matrice définitive ([lignes 757–874](../../EEDS_2529_Dossier_reference_application.md#L757-L874)) :
+Le propriétaire a approuvé l'accès à l'export XLSX pour les profils suivants :
+
+- Administrateur central/national ;
+- Commissaire de région ;
+- Commissaire de district ;
+- Commissaire de groupe local.
+
+Le plugiciel initialise un rôle Galette dédié par profil. Ces rôles reçoivent
+`eeds:read` et `eeds:export`, nécessaires pour ouvrir le registre et lancer
+l'export. Ils ne sont affectés à aucun membre automatiquement. Les attributions
+de rôles aux personnes et les scopes EEDS effectifs doivent être configurés
+séparément par l'administrateur.
+
+Chaque scope reste limité aux structures définies dans
+`eeds_member_scopes`, aux dates d'effet et aux descendants en vigueur. Aucun
+nom de profil ne confère à lui seul un accès national ou territorial. Les
+postes, titulaires, mandats, délégations et autres permissions restent à
+concevoir en R2.
+
+Le droit `eeds:export` n'est pas accordé par défaut au rôle système Staff.
+L'upgrade du plugiciel retire cette attribution générale et initialise les
+quatre rôles dédiés. Le super-administrateur Galette conserve le contournement
+standard des permissions du cœur, mais le scope EEDS reste exigé par les
+routes du plugiciel.
+
+Le dossier propose par ailleurs, sans les confirmer comme matrice définitive
+([lignes 757–874](../../EEDS_2529_Dossier_reference_application.md#L757-L874)) :
 
 - administrateur système ;
 - administrateur national / gestionnaire national ;
@@ -42,7 +68,12 @@ Le plugiciel expose actuellement cinq permissions :
 - `eeds:validate`
 - `eeds:export`
 
-Ces permissions sont déclarées avec niveau Staff et portée de groupe potentielle. Elles ne représentent pas les fonctions institutionnelles détaillées du dossier.
+Les permissions de lecture, création, modification et validation conservent
+leurs niveaux Galette existants. `eeds:export` est déclaré comme
+super-administrateur uniquement pour empêcher son attribution automatique à
+tout le personnel ; les quatre rôles dédiés le reçoivent explicitement. Les
+permissions EEDS peuvent s'appliquer à un scope de groupe, mais les
+autorisations EEDS effectives restent résolues dans `eeds_member_scopes`.
 
 ## 4. Résultat UAT technique
 
@@ -53,25 +84,18 @@ Dans la base jetable MySQL du 2026-11-22 :
 - le super-administrateur sans périmètre a obtenu HTTP 403;
 - une structure synthétique `UAT-SYNTH-NATIONAL` a été affichée.
 
-Ces tests prouvent seulement le comportement de la lecture de registre. Ils ne prouvent pas les mutations, le filtrage SQL des objets ou les exports.
+Ces tests prouvent seulement le comportement de la lecture de registre. Les
+tests unitaires du service d'export vérifient la création XLSX, l'audit et le
+traitement des cellules comme texte. Les tests route-à-route et les tests
+d'intégration d'export sur MySQL/PostgreSQL restent à exécuter.
 
-## 5. Points de sécurité observés
+## 5. Contrôles et limites de sécurité
 
-### Critique
-
-Les opérations de création, transition, transfert, renouvellement, numéro membre, doublon et export vérifient principalement une permission générale. Elles ne vérifient pas systématiquement le périmètre EEDS de l'objet ciblé.
-
-### Élevé
-
-Le registre résout et filtre les structures du périmètre. Les autres routes ne le font pas avant la mutation. Une structure parent, un membre cible ou une structure destination peuvent être hors périmètre.
-
-### Moyen
-
-La prévisualisation des doublons charge tous les membres sans filtre de périmètre. Elle doit filtrer les membres avant comparaison.
-
-### Moyen
-
-L'export actuel n'émet pas de fichier de données. Il accepte des structures et un nombre de lignes déclarés par le client pour produire une entrée d'audit. La politique d'export ne résout pas le périmètre du demandeur.
+- Le serveur résout le scope par permission, membre, date d'effet et hiérarchie ; les identifiants de structure soumis par le client ne déterminent pas les lignes exportées.
+- L'export inclut les champs applicatifs non secrets approuvés, les affiliations actives/en vigueur dans le scope et une entrée d'audit avec les champs, structures et nombre de lignes.
+- Aucun rôle n'est affecté à une personne et aucun scope territorial n'est créé automatiquement ; il faut configurer ces deux éléments avant l'utilisation.
+- Les données réelles ou personnelles de mineurs ne doivent pas être créées ni utilisées pour le développement ou les tests sans validation préalable.
+- Les tests unitaires ne remplacent pas une recette avec données synthétiques sur les deux moteurs de base.
 
 ## 6. Délégations et héritage
 
@@ -82,14 +106,15 @@ L'export actuel n'émet pas de fichier de données. Il accepte des structures et
 - les permissions de groupes Galette sont distinctes des périmètres EEDS ;
 - les délégations statutaires ne sont pas modélisées.
 
-## 7. Matrice proposée à valider
+## 7. Matrice des autres fonctions (à valider)
 
 | Profil proposé | Périmètre | Actions possibles | Statut |
 |---|---|---|---|
 | Administrateur technique | technique uniquement | plateforme, configuration, journalisation | À définir |
-| Administrateur national | national | structure/lire/créer selon autorité | À définir |
-| Commissaire régional | région et descendants | lecture/validation dans périmètre | À définir |
-| Commissaire de district | district et descendants | lecture/validation selon délégation | À définir |
+| Administrateur central/national | scope EEDS attribué | export R1 uniquement | Rôle d'export approuvé ; autres droits à définir |
+| Commissaire de région | région et descendants attribués | export R1 uniquement | Rôle d'export approuvé ; autres droits à définir |
+| Commissaire de district | district et descendants attribués | export R1 uniquement | Rôle d'export approuvé ; autres droits à définir |
+| Commissaire de groupe local | groupe et descendants attribués | export R1 uniquement | Rôle d'export approuvé ; autres droits à définir |
 | Chef de groupe | groupe et unités | membre/activité selon droits | À définir |
 | Chef d'unité | unité | affectation, lecture, validation limitée | À définir |
 | Responsable pédagogique | structures/donnees autorisées | progression | Hors R1 |

@@ -10,16 +10,17 @@ declare(strict_types=1);
 
 namespace EEDSFoundation;
 
+use Galette\Access\Permission;
 use Galette\Core\Authentication;
 use Galette\Core\GalettePlugin;
 use Galette\Core\Plugins\MenuProviderInterface;
 use Galette\Core\Plugins\PermissionsProviderInterface;
 use Galette\Core\Plugins\InstallInitInterface;
 use Galette\Core\Db;
+use EEDSFoundation\Domain\EedsExportRoleInitializer;
 use EEDSFoundation\Domain\StructureService;
 
 use function Safe\date;
-use Galette\Access\Permission;
 
 /**
  * R1 EEDS plugin boundary and permission provider.
@@ -43,6 +44,7 @@ class PluginGaletteEeds extends GalettePlugin implements
             date('Y-m-d'),
             null
         );
+        (new EedsExportRoleInitializer())->initialize($zdb);
     }
 
     /**
@@ -65,7 +67,12 @@ class PluginGaletteEeds extends GalettePlugin implements
             new Permission('eeds:structure-create', _T('Create EEDS structures'), Authentication::ACCESS_STAFF, group: true),
             new Permission('eeds:member-edit', _T('Edit EEDS member affiliations'), Authentication::ACCESS_STAFF, group: true),
             new Permission('eeds:validate', _T('Validate EEDS membership events'), Authentication::ACCESS_STAFF, group: true),
-            new Permission('eeds:export', _T('Export EEDS registry data'), Authentication::ACCESS_STAFF, group: true),
+            new Permission(
+                'eeds:export',
+                _T('Export EEDS registry data'),
+                Authentication::ACCESS_SUPERADMIN,
+                group: true
+            ),
         ];
     }
 

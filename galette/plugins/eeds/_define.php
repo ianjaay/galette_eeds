@@ -29,5 +29,5 @@ return new PluginDefinition(
         'eeds_member_number' => 'eeds:validate',
         'eeds_export' => 'eeds:export',
     ],
-    dbver: 0.2
+    dbver: 0.3
 );

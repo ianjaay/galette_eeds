@@ -13,6 +13,7 @@ namespace Galette\Tests\Core;
 use EEDSFoundation\Access\EedsScope;
 use EEDSFoundation\Domain\AffiliationService;
 use EEDSFoundation\Domain\DuplicatePreview;
+use EEDSFoundation\Domain\EedsExportRoleInitializer;
 use EEDSFoundation\Domain\RenewalService;
 use EEDSFoundation\Domain\StructureService;
 use EEDSFoundation\Domain\EedsExportService;
@@ -24,6 +25,7 @@ use Laminas\Db\ResultSet\ResultSet;
 use Laminas\Db\Sql\Insert;
 use Laminas\Db\Sql\Select;
 use PHPUnit\Framework\TestCase;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 use function Safe\define;
@@ -37,6 +39,7 @@ require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Dom
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/RenewalService.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/StructureService.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/EedsExportService.php';
+require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/EedsExportRoleInitializer.php';
 
 if (!defined('PREFIX_DB')) {
     define('PREFIX_DB', value: 'galette_');
@@ -441,10 +444,25 @@ class EedsFoundationTest extends TestCase
     }
 
     /**
+     * Export roles are limited to the four owner-approved profiles.
+     */
+    public function testExportRolesAreLimitedToApprovedProfiles(): void
+    {
+        $this->assertSame([
+            'Administrateur central/national' => 'EEDS export - Administrateur central/national',
+            'Commissaire de région' => 'EEDS export - Commissaire de région',
+            'Commissaire de district' => 'EEDS export - Commissaire de district',
+            'Commissaire de groupe local' => 'EEDS export - Commissaire de groupe local',
+        ], EedsExportRoleInitializer::PROFILE_ROLES);
+    }
+
+    /**
      * Scoped XLSX export creates a workbook and records an audit row.
      */
     public function testScopedExportCreatesXlsxAndAudit(): void
     {
+        $members = new ResultSet();
+        $members->initialize([['nom_adh' => '=1+1']]);
         $empty = new ResultSet();
         $empty->initialize([]);
 
@@ -463,7 +481,7 @@ class EedsFoundationTest extends TestCase
             ->with('eeds_export_audit')
             ->willReturn($insert);
         $database->expects($this->exactly(2))->method('execute')
-            ->willReturn($empty);
+            ->willReturnOnConsecutiveCalls($members, $empty);
         $platform = $this->createStub(PlatformInterface::class);
         $platform->method('quoteValue')->willReturnCallback(
             static fn(string $value): string => "'" . $value . "'"
@@ -472,14 +490,24 @@ class EedsFoundationTest extends TestCase
 
         $export = (new EedsExportService())->export($database, 7, [10]);
 
-        $this->assertFileExists($export['path']);
-        $loaded = IOFactory::load($export['path']);
-        $this->assertSame('EEDS', $loaded->getActiveSheet()->getTitle());
-        $loaded->disconnectWorksheets();
-        $this->assertSame(0, $export['row_count']);
-        $this->assertContains('national_number', $export['fields']);
-
-        unlink($export['path']);
+        try {
+            $this->assertFileExists($export['path']);
+            $loaded = IOFactory::load($export['path']);
+            $sheet = $loaded->getActiveSheet();
+            $this->assertSame('EEDS', $sheet->getTitle());
+            $name_column = array_search('nom_adh', $export['fields'], strict: true);
+            $this->assertIsInt($name_column);
+            $this->assertSame(
+                DataType::TYPE_STRING,
+                $sheet->getCell([$name_column + 1, 2])->getDataType()
+            );
+            $this->assertSame('=1+1', $sheet->getCell([$name_column + 1, 2])->getValue());
+            $loaded->disconnectWorksheets();
+            $this->assertSame(1, $export['row_count']);
+            $this->assertContains('national_number', $export['fields']);
+        } finally {
+            unlink($export['path']);
+        }
     }
 
     /**
