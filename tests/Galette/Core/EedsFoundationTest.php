@@ -535,6 +535,38 @@ class EedsFoundationTest extends TestCase
     }
 
     /**
+     * Group mapping refuses a tree that violates the approved EEDS hierarchy.
+     */
+    public function testGroupMappingPreviewRejectsInvalidParentType(): void
+    {
+        $structures = new ResultSet();
+        $structures->initialize([
+            [
+                'id_structure' => 1,
+                'parent_structure' => null,
+                'structure_name' => 'Nation',
+                'structure_type' => 'national',
+            ],
+            [
+                'id_structure' => 2,
+                'parent_structure' => 1,
+                'structure_name' => 'Synthetic District',
+                'structure_type' => 'district',
+            ],
+        ]);
+        $select = $this->createStub(Select::class);
+        $select->method('columns')->willReturnSelf();
+
+        $database = $this->createStub(Db::class);
+        $database->method('select')->willReturn($select);
+        $database->method('execute')->willReturn($structures);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('An EEDS district must be a child of an EEDS region.');
+        (new StructureGroupMapper())->preview($database);
+    }
+
+    /**
      * Structure types remain restricted to the documented hierarchy.
      */
     public function testStructureTypesFollowDocumentedHierarchy(): void

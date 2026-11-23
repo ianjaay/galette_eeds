@@ -81,6 +81,22 @@ class GaletteApplication extends Application
                     )
                 );
             }
+            if (class_exists(\EEDSFoundation\Console\SyncGaletteGroups::class)) {
+                $this->addCommand(
+                    $this->make(
+                        $container,
+                        \EEDSFoundation\Console\SyncGaletteGroups::class
+                    )
+                );
+            }
+            if (class_exists(\EEDSFoundation\Console\MapExistingGaletteGroup::class)) {
+                $this->addCommand(
+                    $this->make(
+                        $container,
+                        \EEDSFoundation\Console\MapExistingGaletteGroup::class
+                    )
+                );
+            }
         }
         $this->addCommand($this->make($container, Command\MakeTwigCache::class));
         $this->addCommand($this->make($container, Command\TwigPotReferences::class));

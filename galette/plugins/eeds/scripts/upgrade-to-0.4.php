@@ -22,8 +22,19 @@ use Galette\Updater\AbstractUpdater;
 final class UpgradeTo04 extends AbstractUpdater
 {
     protected ?string $db_version = '0.4';
-    protected ?string $sql_version = '0.4';
 
+    /**
+     * Configure the SQL scripts for both supported database engines.
+     */
+    public function __construct()
+    {
+        parent::__construct();
+        $this->setSqlScripts('0.4');
+    }
+
+    /**
+     * Keep existing groups and memberships unchanged during the migration.
+     */
     protected function update(): bool
     {
         return true;

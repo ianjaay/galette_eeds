@@ -25,12 +25,21 @@ use Throwable;
  */
 final readonly class StructureGroupMapper
 {
+    private const array EXPECTED_PARENT_TYPES = [
+        'national' => null,
+        'region' => 'national',
+        'district' => 'region',
+        'groupe_local' => 'district',
+        'unite' => 'groupe_local',
+    ];
+
     /**
      * Create a Galette group for an EEDS structure and persist its explicit link.
      */
     public function ensureGroupForStructure(Db $zdb, int $structure_id): int
     {
         $structure = $this->getStructure($zdb, $structure_id);
+        $this->assertStructureHierarchy($zdb, $structure);
         $existing_group_id = $this->getMappedGroupId($zdb, $structure_id);
         if ($existing_group_id !== null) {
             $this->assertMappingMatches($zdb, $structure, $existing_group_id);
@@ -81,6 +90,7 @@ final readonly class StructureGroupMapper
                 $zdb->beginTransaction();
             }
             $structure = $this->getStructure($zdb, $structure_id);
+            $this->assertStructureHierarchy($zdb, $structure);
 
             $mapped_group_id = $this->getMappedGroupId($zdb, $structure_id);
             if ($mapped_group_id !== null) {
@@ -253,7 +263,7 @@ final readonly class StructureGroupMapper
     private function getStructure(Db $zdb, int $structure_id): array
     {
         $select = $zdb->select('eeds_structures');
-        $select->columns(['id_structure', 'parent_structure', 'structure_name'])
+        $select->columns(['id_structure', 'parent_structure', 'structure_name', 'structure_type'])
             ->where(['id_structure' => $structure_id]);
         $rows = $zdb->execute($select);
         if ($rows->count() !== 1) {
@@ -274,6 +284,7 @@ final readonly class StructureGroupMapper
         foreach ($zdb->execute($select) as $row) {
             $structures[] = (array)$row;
         }
+        $this->assertStructureTreeHierarchy($structures);
         $type_order = [
             'national' => 0,
             'region' => 1,
@@ -289,6 +300,83 @@ final readonly class StructureGroupMapper
             ) ?: ((int)$left['id_structure'] <=> (int)$right['id_structure'])
         );
         return $structures;
+    }
+
+    /**
+     * Ensure a structure uses the approved EEDS parent type.
+     *
+     * @param array<string, int|string|null> $structure
+     */
+    private function assertStructureHierarchy(Db $zdb, array $structure): void
+    {
+        $type = (string)$structure['structure_type'];
+        if (!array_key_exists($type, self::EXPECTED_PARENT_TYPES)) {
+            throw new \RuntimeException(sprintf('Unsupported EEDS structure type "%s".', $type));
+        }
+
+        $expected_parent_type = self::EXPECTED_PARENT_TYPES[$type];
+        $parent_structure_id = $structure['parent_structure'];
+        if ($expected_parent_type === null) {
+            if ($parent_structure_id !== null) {
+                throw new \RuntimeException('The EEDS national root must not have a parent.');
+            }
+            return;
+        }
+        if ($parent_structure_id === null) {
+            throw new \RuntimeException(sprintf('An EEDS %s must have a parent.', $type));
+        }
+
+        $parent = $zdb->select('eeds_structures');
+        $parent->columns(['structure_type'])->where(['id_structure' => (int)$parent_structure_id]);
+        $rows = $zdb->execute($parent);
+        if ($rows->count() !== 1 || (string)$rows->current()->structure_type !== $expected_parent_type) {
+            throw new \RuntimeException(sprintf(
+                'An EEDS %1$s must be a child of an EEDS %2$s.',
+                $type,
+                $expected_parent_type
+            ));
+        }
+    }
+
+    /**
+     * Validate the complete structure tree before preview or synchronization.
+     *
+     * @param list<array<string, int|string|null>> $structures
+     */
+    private function assertStructureTreeHierarchy(array $structures): void
+    {
+        $by_id = [];
+        foreach ($structures as $structure) {
+            $by_id[(int)$structure['id_structure']] = $structure;
+        }
+
+        foreach ($structures as $structure) {
+            $type = (string)$structure['structure_type'];
+            if (!array_key_exists($type, self::EXPECTED_PARENT_TYPES)) {
+                throw new \RuntimeException(sprintf('Unsupported EEDS structure type "%s".', $type));
+            }
+
+            $expected_parent_type = self::EXPECTED_PARENT_TYPES[$type];
+            $parent_structure_id = $structure['parent_structure'];
+            if ($expected_parent_type === null) {
+                if ($parent_structure_id !== null) {
+                    throw new \RuntimeException('The EEDS national root must not have a parent.');
+                }
+                continue;
+            }
+            if ($parent_structure_id === null) {
+                throw new \RuntimeException(sprintf('An EEDS %s must have a parent.', $type));
+            }
+
+            $parent = $by_id[(int)$parent_structure_id] ?? null;
+            if ($parent === null || (string)$parent['structure_type'] !== $expected_parent_type) {
+                throw new \RuntimeException(sprintf(
+                    'An EEDS %1$s must be a child of an EEDS %2$s.',
+                    $type,
+                    $expected_parent_type
+                ));
+            }
+        }
     }
 
     /**
