@@ -368,6 +368,9 @@ class Group
         global $emitter;
 
         $this->removal_blockers = [];
+        if ($this->isEedsMapped()) {
+            $this->preventRemoval(_T('EEDS structure groups are managed by EEDS affiliations.'));
+        }
         $emitter->dispatch(new GaletteEvent('group.before_remove', $this));
         if ($cascade) {
             foreach ($this->getGroups() as $subgroup) {
@@ -416,6 +419,7 @@ class Group
     {
         global $zdb, $hist;
 
+        $this->assertNotEedsMapped();
         try {
             $update = $zdb->update(self::TABLE);
             $update->set(
@@ -454,6 +458,9 @@ class Group
     {
         global $zdb, $hist, $emitter;
 
+        if (isset($this->id)) {
+            $this->assertNotEedsMapped();
+        }
         $parent_group = null;
         if ($this->parent_group) {
             $parent_group = $this->parent_group->getId();
@@ -772,6 +779,7 @@ class Group
     {
         global $zdb;
 
+        $this->assertNotEedsMapped();
         try {
             $insert = $zdb->insert(self::GROUPSUSERS_TABLE);
             $insert->values(
@@ -806,6 +814,7 @@ class Group
     {
         global $zdb;
 
+        $this->assertNotEedsMapped();
         try {
             $zdb->beginTransaction();
 
@@ -888,6 +897,7 @@ class Group
     {
         global $zdb;
 
+        $this->assertNotEedsMapped();
         try {
             $zdb->beginTransaction();
 
@@ -987,7 +997,25 @@ class Group
      */
     public function canEdit(Login $login): bool
     {
-        return $this->isGranted('group:edit', $login);
+        return !$this->isEedsMapped() && $this->isGranted('group:edit', $login);
+    }
+
+    /**
+     * Whether this group mirrors an EEDS structure.
+     */
+    public function isEedsMapped(): bool
+    {
+        return isset($this->id) && Groups::isEedsMapped($this->id);
+    }
+
+    /**
+     * Prevent Galette-native mutations of EEDS-controlled groups.
+     */
+    private function assertNotEedsMapped(): void
+    {
+        if ($this->isEedsMapped()) {
+            throw new RuntimeException('EEDS structure groups are managed by EEDS affiliations.');
+        }
     }
 
     /**

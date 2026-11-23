@@ -52,7 +52,11 @@ final readonly class EedsExportRoleInitializer
                 $select->columns([Role::PK])->where(['name' => $name]);
                 $result = $zdb->execute($select);
 
-                if ($result->count() > 0) {
+                if ($result->count() > 1) {
+                    throw new \RuntimeException(sprintf('Multiple roles named "%s" exist.', $name));
+                }
+                $existing = $result->count() === 1;
+                if ($existing) {
                     $role_id = (int)$result->current()->{Role::PK};
                 } else {
                     $role = new Role();
@@ -70,6 +74,11 @@ final readonly class EedsExportRoleInitializer
                         'permission' => $permission,
                     ]);
                     if ($zdb->execute($select)->count() === 0) {
+                        if ($existing) {
+                            throw new \RuntimeException(
+                                sprintf('Existing role "%s" lacks "%s"; review it before initialization.', $name, $permission)
+                            );
+                        }
                         $insert = $zdb->insert(Roles::PERMISSIONS_TABLE);
                         $insert->values([
                             Role::PK => $role_id,

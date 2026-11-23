@@ -19,6 +19,7 @@ use Galette\Core\Plugins\InstallInitInterface;
 use Galette\Core\Db;
 use EEDSFoundation\Domain\EedsExportRoleInitializer;
 use EEDSFoundation\Domain\StructureService;
+use EEDSFoundation\Domain\StructureGroupMapper;
 
 use function Safe\date;
 
@@ -33,17 +34,27 @@ class PluginGaletteEeds extends GalettePlugin implements
     InstallInitInterface
 {
     /**
+     * Constructor.
+     *
+     * @param Db $zdb Database instance
+     */
+    public function __construct(private readonly Db $zdb)
+    {
+    }
+
+    /**
      * Create the default national root during plugin installation.
      */
     public function installInit(Db $zdb): void
     {
-        (new StructureService())->ensureNationalRoot(
+        $root_id = (new StructureService())->ensureNationalRoot(
             $zdb,
             'Nation',
             'NATION',
             date('Y-m-d'),
             null
         );
+        (new StructureGroupMapper())->ensureGroupForStructure($zdb, $root_id);
         (new EedsExportRoleInitializer())->initialize($zdb);
     }
 
@@ -52,7 +63,30 @@ class PluginGaletteEeds extends GalettePlugin implements
      */
     public function isInstalled(): bool
     {
-        return true;
+        $required_tables = [
+            'eeds_structures',
+            'eeds_member_scopes',
+            'eeds_member_affiliations',
+            'eeds_member_lifecycle',
+            'eeds_status_history',
+            'eeds_renewals',
+            'eeds_member_numbers',
+            'eeds_duplicate_candidates',
+            'eeds_export_audit',
+            'eeds_structure_groups',
+        ];
+        return array_diff(
+            array_map(static fn(string $table): string => PREFIX_DB . $table, $required_tables),
+            $this->zdb->getTables()
+        ) === [];
+    }
+
+    /**
+     * Untracked EEDS installations predate the dedicated export roles.
+     */
+    public function getLegacyDbVersion(): ?float
+    {
+        return 0.2;
     }
 
     /**
@@ -63,15 +97,30 @@ class PluginGaletteEeds extends GalettePlugin implements
     public function getPermissions(): array
     {
         return [
-            new Permission('eeds:read', _T('Read EEDS registry'), Authentication::ACCESS_STAFF, group: true),
-            new Permission('eeds:structure-create', _T('Create EEDS structures'), Authentication::ACCESS_STAFF, group: true),
-            new Permission('eeds:member-edit', _T('Edit EEDS member affiliations'), Authentication::ACCESS_STAFF, group: true),
-            new Permission('eeds:validate', _T('Validate EEDS membership events'), Authentication::ACCESS_STAFF, group: true),
+            new Permission('eeds:read', _T('Read EEDS registry'), Authentication::ACCESS_STAFF, group: false),
+            new Permission(
+                'eeds:structure-create',
+                _T('Create EEDS structures'),
+                Authentication::ACCESS_STAFF,
+                group: false
+            ),
+            new Permission(
+                'eeds:member-edit',
+                _T('Edit EEDS member affiliations'),
+                Authentication::ACCESS_STAFF,
+                group: false
+            ),
+            new Permission(
+                'eeds:validate',
+                _T('Validate EEDS membership events'),
+                Authentication::ACCESS_STAFF,
+                group: false
+            ),
             new Permission(
                 'eeds:export',
                 _T('Export EEDS registry data'),
                 Authentication::ACCESS_SUPERADMIN,
-                group: true
+                group: false
             ),
         ];
     }

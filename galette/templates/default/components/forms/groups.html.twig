@@ -17,7 +17,7 @@
 {% set member_gids = member.id ? member.getGroups()|map(g => g.getId()) : [] %}
 {% set manager_gids = member.id ? member.getManagedGroups()|map(g => g.getId()) : [] %}
 {% set sorted_groups = groups|sort((a, b) => a.getFullName() <=> b.getFullName()) %}
-{% set addable_groups = sorted_groups|filter(g => ((can_edit_members and login.isGroupManager(g.getId())) or (can_edit_managers and can('member:manage', g))) and g.getId() not in member_gids and g.getId() not in manager_gids) %}
+{% set addable_groups = sorted_groups|filter(g => not g.isEedsMapped() and ((can_edit_members and login.isGroupManager(g.getId())) or (can_edit_managers and can('member:manage', g))) and g.getId() not in member_gids and g.getId() not in manager_gids) %}
 <div id="groups_field" class="ui styled fluid accordion field">
     <div class="active title">
         <i class="dropdown icon" aria-hidden="true"></i>
@@ -40,8 +40,8 @@
     {% set is_member = gid in member_gids %}
     {% set is_manager = gid in manager_gids %}
     {% set linked = is_member or is_manager %}
-    {% set row_editable = can_edit_members and login.isGroupManager(gid) %}
-    {% set manager_editable = can_edit_managers and can('member:manage', group) %}
+    {% set row_editable = not group.isEedsMapped() and can_edit_members and login.isGroupManager(gid) %}
+    {% set manager_editable = not group.isEedsMapped() and can_edit_managers and can('member:manage', group) %}
     {% if linked or row_editable or manager_editable %}
         {% set full_name = group.getFullName() %}
                 <tr id="group_row_{{ gid }}" data-group="{{ gid }}" data-member="{{ is_member ? 1 : 0 }}" data-manager="{{ is_manager ? 1 : 0 }}" data-linked="{{ linked ? 1 : 0 }}"{% if not linked %} hidden{% endif %}>
@@ -53,7 +53,12 @@
                         <span class="ui mini orange basic label group-state displaynone" data-state="added">{{ _Tx("member groups", "added") }}</span>
                         <span class="ui mini orange basic label group-state displaynone" data-state="changed">{{ _Tx("member groups", "changed") }}</span>
                         <span class="ui mini orange basic label group-state displaynone" data-state="removed">{{ _Tx("member groups", "will be removed") }}</span>
-        {% if linked and can_edit_members and not row_editable %}
+        {% if group.isEedsMapped() %}
+                        <span class="ui small grey text">
+                            <i class="lock icon" aria-hidden="true"></i>
+                            {{ _T("Managed by EEDS affiliations") }}
+                        </span>
+        {% elseif linked and can_edit_members and not row_editable %}
                         <span class="ui small grey text">
                             <i class="lock icon" aria-hidden="true"></i>
                             {{ _T("Group you do not manage") }}

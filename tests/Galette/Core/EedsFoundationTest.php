@@ -16,19 +16,29 @@ use EEDSFoundation\Domain\DuplicatePreview;
 use EEDSFoundation\Domain\EedsExportRoleInitializer;
 use EEDSFoundation\Domain\RenewalService;
 use EEDSFoundation\Domain\StructureService;
+use EEDSFoundation\Domain\StructureGroupMapper;
 use EEDSFoundation\Domain\EedsExportService;
 use EEDSFoundation\Security\EedsExportPolicy;
 use EEDSFoundation\Domain\MemberLifecycle;
+use EEDSFoundation\PluginGaletteEeds;
 use Galette\Core\Db;
+use Galette\Core\Authentication;
+use Galette\Core\Login;
+use Galette\Defaults\MembersFields;
+use Galette\Defaults\MembersFieldsCategories;
+use Galette\Entity\Adherent;
+use Galette\Entity\FieldsConfig;
 use Laminas\Db\Adapter\Platform\PlatformInterface;
 use Laminas\Db\ResultSet\ResultSet;
 use Laminas\Db\Sql\Insert;
 use Laminas\Db\Sql\Select;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 use function Safe\define;
+use function Safe\json_decode;
 use function Safe\unlink;
 
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Access/EedsScope.php';
@@ -38,8 +48,10 @@ require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Dom
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/DuplicatePreview.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/RenewalService.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/StructureService.php';
+require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/StructureGroupMapper.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/EedsExportService.php';
 require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/Domain/EedsExportRoleInitializer.php';
+require_once dirname(__DIR__, 3) . '/galette/plugins/eeds/lib/EEDSFoundation/PluginGaletteEeds.php';
 
 if (!defined('PREFIX_DB')) {
     define('PREFIX_DB', value: 'galette_');
@@ -367,7 +379,7 @@ class EedsFoundationTest extends TestCase
         $database->method('execute')->willReturn($empty);
         $database->expects($this->once())->method('rollback');
         $database->expects($this->never())->method('insert');
-        $database->method('inTransaction')->willReturn(false);
+        $database->method('inTransaction')->willReturnOnConsecutiveCalls(false, true);
         $platform = $this->createStub(PlatformInterface::class);
         $platform->method('quoteValue')->willReturnCallback(
             static fn(string $value): string => "'" . $value . "'"
@@ -393,7 +405,7 @@ class EedsFoundationTest extends TestCase
     public function testNationalRootInitializationReusesExistingRoot(): void
     {
         $result = new ResultSet();
-        $result->initialize([['id_structure' => 1]]);
+        $result->initialize([['id_structure' => 1, 'parent_structure' => null]]);
 
         $select = $this->createStub(Select::class);
         $select->method('columns')->willReturnSelf();
@@ -421,6 +433,108 @@ class EedsFoundationTest extends TestCase
     }
 
     /**
+     * National root initialization leaves an enclosing transaction to its caller.
+     */
+    public function testNationalRootInitializationPreservesCallerTransaction(): void
+    {
+        $result = new ResultSet();
+        $result->initialize([['id_structure' => 1, 'parent_structure' => null]]);
+
+        $select = $this->createStub(Select::class);
+        $select->method('columns')->willReturnSelf();
+        $select->method('where')->willReturnSelf();
+
+        $database = $this->createMock(Db::class);
+        $database->method('inTransaction')->willReturn(true);
+        $database->expects($this->never())->method('beginTransaction');
+        $database->expects($this->once())->method('select')
+            ->with('eeds_structures')
+            ->willReturn($select);
+        $database->method('execute')->willReturn($result);
+        $database->expects($this->never())->method('commit');
+        $database->expects($this->never())->method('rollback');
+        $database->expects($this->never())->method('insert');
+
+        $this->assertSame(
+            1,
+            (new StructureService())->ensureNationalRoot(
+                $database,
+                'Nation',
+                'NATION',
+                '2026-11-22',
+                7
+            )
+        );
+    }
+
+    /**
+     * Group synchronization preview lists EEDS structures parent-first.
+     */
+    public function testGroupMappingPreviewOrdersStructuresParentFirst(): void
+    {
+        $structures = new ResultSet();
+        $structures->initialize([
+            [
+                'id_structure' => 5,
+                'parent_structure' => 4,
+                'structure_name' => 'Synthetic Unit',
+                'structure_type' => 'unite',
+            ],
+            [
+                'id_structure' => 3,
+                'parent_structure' => 2,
+                'structure_name' => 'Synthetic District',
+                'structure_type' => 'district',
+            ],
+            [
+                'id_structure' => 1,
+                'parent_structure' => null,
+                'structure_name' => 'Nation',
+                'structure_type' => 'national',
+            ],
+            [
+                'id_structure' => 4,
+                'parent_structure' => 3,
+                'structure_name' => 'Synthetic Local Group',
+                'structure_type' => 'groupe_local',
+            ],
+            [
+                'id_structure' => 2,
+                'parent_structure' => 1,
+                'structure_name' => 'Synthetic Region',
+                'structure_type' => 'region',
+            ],
+        ]);
+        $empty = new ResultSet();
+        $empty->initialize([]);
+
+        $select = $this->createStub(Select::class);
+        $select->method('columns')->willReturnSelf();
+        $select->method('where')->willReturnSelf();
+
+        $database = $this->createStub(Db::class);
+        $database->method('select')->willReturn($select);
+        $execute_count = 0;
+        $database->method('execute')->willReturnCallback(
+            static function () use (&$execute_count, $structures, $empty): ResultSet {
+                return $execute_count++ === 0 ? $structures : $empty;
+            }
+        );
+
+        $messages = (new StructureGroupMapper())->preview($database);
+        $this->assertSame(
+            [
+                'Structure #1 "Nation" would create a Galette group under its mapped EEDS parent.',
+                'Structure #2 "Synthetic Region" would create a Galette group under its mapped EEDS parent.',
+                'Structure #3 "Synthetic District" would create a Galette group under its mapped EEDS parent.',
+                'Structure #4 "Synthetic Local Group" would create a Galette group under its mapped EEDS parent.',
+                'Structure #5 "Synthetic Unit" would create a Galette group under its mapped EEDS parent.',
+            ],
+            $messages
+        );
+    }
+
+    /**
      * Structure types remain restricted to the documented hierarchy.
      */
     public function testStructureTypesFollowDocumentedHierarchy(): void
@@ -432,6 +546,18 @@ class EedsFoundationTest extends TestCase
     }
 
     /**
+     * EEDS permissions cannot be limited to Galette groups without an approved mapping.
+     */
+    public function testEedsPermissionsRejectGaletteGroupAssignments(): void
+    {
+        $plugin = new PluginGaletteEeds($this->createStub(Db::class));
+
+        foreach ($plugin->getPermissions() as $permission) {
+            $this->assertFalse($permission->hasGroupScope(), $permission->name);
+        }
+    }
+
+    /**
      * XLSX export fails closed without an organizational scope.
      */
     public function testExportFailsClosedWithoutScope(): void
@@ -440,39 +566,82 @@ class EedsFoundationTest extends TestCase
         $database->expects($this->never())->method('select');
 
         $this->expectException(\InvalidArgumentException::class);
-        (new EedsExportService())->export($database, 7, []);
+        (new EedsExportService())->export(
+            $database,
+            $this->createStub(Login::class),
+            $this->createStub(FieldsConfig::class),
+            []
+        );
     }
 
     /**
-     * Export roles are limited to the four owner-approved profiles.
+     * A missing EEDS table must make the plugin eligible for installation.
      */
-    public function testExportRolesAreLimitedToApprovedProfiles(): void
+    public function testPluginDetectsMissingDatabase(): void
     {
-        $this->assertSame([
-            'Administrateur central/national' => 'EEDS export - Administrateur central/national',
-            'Commissaire de région' => 'EEDS export - Commissaire de région',
-            'Commissaire de district' => 'EEDS export - Commissaire de district',
-            'Commissaire de groupe local' => 'EEDS export - Commissaire de groupe local',
-        ], EedsExportRoleInitializer::PROFILE_ROLES);
+        $database = $this->createMock(Db::class);
+        $database->expects($this->once())->method('getTables')->willReturn([]);
+
+        $this->assertFalse((new PluginGaletteEeds($database))->isInstalled());
     }
 
     /**
-     * Scoped XLSX export creates a workbook and records an audit row.
+     * An unrelated existing role must not acquire export rights by name alone.
      */
-    public function testScopedExportCreatesXlsxAndAudit(): void
+    public function testExportRoleInitializationRejectsNameCollision(): void
     {
-        $members = new ResultSet();
-        $members->initialize([['nom_adh' => '=1+1']]);
+        $role = new ResultSet();
+        $role->initialize([['id_role' => 42]]);
         $empty = new ResultSet();
         $empty->initialize([]);
 
         $select = $this->createStub(Select::class);
         $select->method('columns')->willReturnSelf();
+        $select->method('where')->willReturnSelf();
+        $database = $this->createMock(Db::class);
+        $database->method('select')->willReturn($select);
+        $database->method('execute')->willReturnOnConsecutiveCalls($role, $empty);
+        $database->method('inTransaction')->willReturnOnConsecutiveCalls(false, true);
+        $database->expects($this->once())->method('rollback');
+        $database->expects($this->never())->method('insert');
+
+        try {
+            (new EedsExportRoleInitializer())->initialize($database);
+            $this->fail('An existing role without the expected permissions must be reviewed.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('review it before initialization', $e->getMessage());
+        } finally {
+            if (isset($GLOBALS['galette_log_var'])) {
+                $GLOBALS['galette_log_var'] = null;
+            }
+        }
+    }
+
+    /**
+     * Scoped XLSX export respects field visibility and records the actual columns.
+     */
+    #[DataProvider('exportAccessLevels')]
+    public function testScopedExportCreatesXlsxAndAudit(int $access_level, bool $info_visible): void
+    {
+        $members = new ResultSet();
+        $members->initialize([['nom_adh' => '=1+1', 'info_adh' => 'restricted']]);
+        $empty = new ResultSet();
+        $empty->initialize([]);
+
+        $select = $this->createMock(Select::class);
+        $expected_columns = $info_visible ? ['nom_adh', 'info_adh', 'gpgid'] : ['nom_adh', 'gpgid'];
+        $select->expects($this->once())->method('columns')->with($expected_columns)->willReturnSelf();
         $select->method('join')->willReturnSelf();
         $select->method('where')->willReturnSelf();
 
-        $insert = $this->createStub(Insert::class);
-        $insert->method('values')->willReturnSelf();
+        $audit_fields = null;
+        $insert = $this->createMock(Insert::class);
+        $insert->expects($this->once())->method('values')->with($this->callback(
+            static function (array $values) use (&$audit_fields): bool {
+                $audit_fields = json_decode($values['export_fields'], true);
+                return true;
+            }
+        ))->willReturnSelf();
 
         $database = $this->createMock(Db::class);
         $database->expects($this->once())->method('select')
@@ -488,7 +657,21 @@ class EedsFoundationTest extends TestCase
         );
         $database->method('__get')->with('platform')->willReturn($platform);
 
-        $export = (new EedsExportService())->export($database, 7, [10]);
+        $login = $this->createStub(Login::class);
+        $login->method('__get')->willReturn(7);
+        $login->method('getAccessLevel')->willReturn($access_level);
+        $fields_config = $this->createStub(FieldsConfig::class);
+        $fields_config->method('isVisibleFor')->willReturnCallback(
+            static fn(string $field, int $level): bool => FieldsConfig::isGranted(
+                match ($field) {
+                    'nom_adh', 'gpgid', 'fingerprint' => FieldsConfig::USER_WRITE,
+                    'info_adh' => FieldsConfig::STAFF,
+                    default => FieldsConfig::NOBODY,
+                },
+                $level
+            )
+        );
+        $export = (new EedsExportService())->export($database, $login, $fields_config, [10]);
 
         try {
             $this->assertFileExists($export['path']);
@@ -502,11 +685,181 @@ class EedsFoundationTest extends TestCase
                 $sheet->getCell([$name_column + 1, 2])->getDataType()
             );
             $this->assertSame('=1+1', $sheet->getCell([$name_column + 1, 2])->getValue());
-            $loaded->disconnectWorksheets();
             $this->assertSame(1, $export['row_count']);
             $this->assertContains('national_number', $export['fields']);
+            $this->assertContains('gpgid', $export['fields']);
+            $this->assertSame($info_visible, in_array('info_adh', $export['fields'], strict: true));
+            $this->assertNotContains('fingerprint', $export['fields']);
+            $this->assertNotContains('mdp_adh', $export['fields']);
+            $this->assertSame($export['fields'], $audit_fields);
+            $this->assertSame($export['fields'], $sheet->rangeToArray(
+                'A1:' . $sheet->getHighestColumn() . '1',
+                null,
+                true,
+                true,
+                false
+            )[0]);
+            $loaded->disconnectWorksheets();
         } finally {
             unlink($export['path']);
+        }
+    }
+
+    /**
+     * @return array<string, array{int, bool}>
+     */
+    public static function exportAccessLevels(): array
+    {
+        return [
+            'ordinary user' => [Authentication::ACCESS_USER, false],
+            'staff' => [Authentication::ACCESS_STAFF, true],
+        ];
+    }
+
+    /**
+     * Exercise scope, duplicate lookup and XLSX export using synthetic members.
+     */
+    public function testScopedExportAndDuplicatesAgainstDatabase(): void
+    {
+        global $zdb;
+        if (!$zdb instanceof Db || !$zdb->tableExists('eeds_member_affiliations')) {
+            $this->markTestSkipped('An installed EEDS plugin is required.');
+        }
+
+        $suffix = bin2hex(random_bytes(6));
+        $zdb->beginTransaction();
+        $path = null;
+        try {
+            $root = $zdb->select('eeds_structures');
+            $root->columns(['id_structure'])->where(['structure_type' => 'national']);
+            $root_row = $zdb->execute($root)->current();
+            $this->assertNotFalse($root_row);
+            $root_id = (int)$root_row->id_structure;
+
+            $structures = [];
+            foreach (['inside', 'outside', 'child'] as $label) {
+                $code = 'TEST-' . $label . '-' . $suffix;
+                $insert = $zdb->insert('eeds_structures');
+                $insert->values([
+                    'parent_structure' => $label === 'child' ? $structures['inside'] : $root_id,
+                    'structure_type' => $label === 'child' ? 'district' : 'region',
+                    'structure_code' => $code,
+                    'structure_name' => 'Synthetic ' . $label,
+                    'recognition_status' => 'recognized',
+                    'effective_start' => '2020-01-01',
+                    'created_at' => '2020-01-01 00:00:00',
+                ]);
+                $zdb->execute($insert);
+                $select = $zdb->select('eeds_structures');
+                $select->columns(['id_structure'])->where(['structure_code' => $code]);
+                $structures[$label] = (int)$zdb->execute($select)->current()->id_structure;
+            }
+
+            $status = $zdb->select('statuts');
+            $status->columns(['id_statut'])->limit(1);
+            $status_row = $zdb->execute($status)->current();
+            $this->assertNotFalse($status_row);
+            $members = [];
+            foreach (['first', 'second', 'outside', 'expired'] as $label) {
+                $login = 'synthetic-' . $label . '-' . $suffix;
+                $insert = $zdb->insert('adherents');
+                $insert->values([
+                    'id_statut' => (int)$status_row->id_statut,
+                    'nom_adh' => '=1+1',
+                    'prenom_adh' => 'Synthetic',
+                    'sexe_adh' => 0,
+                    'adresse_adh' => '',
+                    'email_adh' => $suffix . '@example.invalid',
+                    'login_adh' => $login,
+                    'mdp_adh' => 'not-a-real-password',
+                    'date_crea_adh' => '2020-01-01',
+                    'date_modif_adh' => '2020-01-01',
+                ]);
+                $zdb->execute($insert);
+                $select = $zdb->select('adherents');
+                $select->columns(['id_adh'])->where(['login_adh' => $login]);
+                $members[$label] = (int)$zdb->execute($select)->current()->id_adh;
+
+                $insert = $zdb->insert('eeds_member_affiliations');
+                $insert->values([
+                    'id_adh' => $members[$label],
+                    'id_structure' => $structures[match ($label) {
+                        'outside' => 'outside',
+                        'second' => 'child',
+                        default => 'inside',
+                    }],
+                    'affiliation_status' => 'active',
+                    'effective_start' => '2020-01-01',
+                    'effective_end' => $label === 'expired' ? '2020-01-02' : null,
+                    'created_at' => '2020-01-01 00:00:00',
+                ]);
+                $zdb->execute($insert);
+            }
+
+            $insert = $zdb->insert('eeds_member_scopes');
+            $insert->values([
+                'id_adh' => $members['first'],
+                'id_structure' => $structures['inside'],
+                'scope_permission' => 'eeds:export',
+                'effective_start' => '2020-01-01',
+                'created_at' => '2020-01-01 00:00:00',
+            ]);
+            $zdb->execute($insert);
+
+            $scope = EedsScope::forMember($zdb, $members['first'], 'eeds:export');
+            $this->assertSame([$structures['inside'], $structures['child']], $scope);
+            $candidates = (new DuplicatePreview())->preview($zdb, $scope);
+            $this->assertCount(1, $candidates);
+            $this->assertSame($members['first'], $candidates[0]['left_member_id']);
+            $this->assertSame($members['second'], $candidates[0]['right_member_id']);
+
+            $login = $this->createStub(Login::class);
+            $login->method('__get')->willReturn($members['first']);
+            $login->method('getAccessLevel')->willReturn(Authentication::ACCESS_MANAGER);
+            $fields_config = new FieldsConfig(
+                $zdb,
+                Adherent::TABLE,
+                MembersFields::get(),
+                MembersFieldsCategories::get()
+            );
+            $export = (new EedsExportService())->export($zdb, $login, $fields_config, $scope);
+            $path = $export['path'];
+            $this->assertSame(2, $export['row_count']);
+            $spreadsheet = IOFactory::load($path);
+            $sheet = $spreadsheet->getActiveSheet();
+            $login_column = array_search('login_adh', $export['fields'], strict: true);
+            $name_column = array_search('nom_adh', $export['fields'], strict: true);
+            $this->assertIsInt($login_column);
+            $this->assertIsInt($name_column);
+            $exported_logins = [
+                $sheet->getCell([$login_column + 1, 2])->getValue(),
+                $sheet->getCell([$login_column + 1, 3])->getValue(),
+            ];
+            sort($exported_logins);
+            $this->assertSame(['synthetic-first-' . $suffix, 'synthetic-second-' . $suffix], $exported_logins);
+            $this->assertSame('=1+1', $sheet->getCell([$name_column + 1, 2])->getValue());
+            $this->assertSame(DataType::TYPE_STRING, $sheet->getCell([$name_column + 1, 2])->getDataType());
+            $this->assertNotContains('info_adh', $export['fields']);
+            $this->assertNotContains('id_adh', $export['fields']);
+            $this->assertContains('gpgid', $export['fields']);
+            $this->assertNotContains('fingerprint', $export['fields']);
+            $spreadsheet->disconnectWorksheets();
+
+            $audit = $zdb->select('eeds_export_audit');
+            $audit->where(['actor_id' => $members['first']]);
+            $audit_row = $zdb->execute($audit)->current();
+            $this->assertNotFalse($audit_row);
+            $this->assertSame(2, (int)$audit_row->row_count);
+            $this->assertSame($scope, json_decode((string)$audit_row->structure_ids, true));
+            $this->assertSame($export['fields'], json_decode((string)$audit_row->export_fields, true));
+        } finally {
+            try {
+                if ($path !== null && file_exists($path)) {
+                    unlink($path);
+                }
+            } finally {
+                $zdb->rollback();
+            }
         }
     }
 

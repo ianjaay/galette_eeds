@@ -60,6 +60,8 @@ class RegistryController extends AbstractController
         $repository = new RegistryRepository();
         $structures = $repository->structures($this->zdb, $scope->getStructureIds());
         $affiliations = $repository->affiliations($this->zdb, $scope->getStructureIds());
+        $can_export = $this->accessControl->can('eeds:export')
+            && $this->scopeFor('eeds:export')->getStructureIds() !== [];
 
         $this->view->render(
             $response,
@@ -68,6 +70,7 @@ class RegistryController extends AbstractController
                 'page_title' => _T('EEDS registry'),
                 'structures' => $structures,
                 'affiliations' => $affiliations,
+                'can_export' => $can_export,
             ]
         );
         return $response;
@@ -450,7 +453,8 @@ class RegistryController extends AbstractController
 
         $export = (new EedsExportService())->export(
             $this->zdb,
-            (int)$this->login->id,
+            $this->login,
+            $this->fields_config,
             $scope->getStructureIds()
         );
         $read_succeeded = false;

@@ -75,6 +75,46 @@ class Groups
     }
 
     /**
+     * Whether a Galette group is the read-only mirror of an EEDS structure.
+     */
+    public static function isEedsMapped(int $group_id): bool
+    {
+        global $zdb;
+
+        if (
+            $group_id <= 0
+            || !$zdb instanceof Db
+            || !$zdb->tableExists('eeds_structure_groups')
+        ) {
+            return false;
+        }
+
+        $select = $zdb->select('eeds_structure_groups');
+        $select->columns([Group::PK])->where([Group::PK => $group_id]);
+        return $zdb->execute($select)->count() > 0;
+    }
+
+    /**
+     * @return list<int>
+     */
+    public static function getEedsMappedGroupIds(): array
+    {
+        global $zdb;
+
+        if (!$zdb instanceof Db || !$zdb->tableExists('eeds_structure_groups')) {
+            return [];
+        }
+
+        $select = $zdb->select('eeds_structure_groups');
+        $select->columns([Group::PK]);
+        $ids = [];
+        foreach ($zdb->execute($select) as $row) {
+            $ids[] = (int)$row->{Group::PK};
+        }
+        return $ids;
+    }
+
+    /**
      * Get groups list
      *
      * @param bool     $full       Return full list or root only
@@ -245,6 +285,20 @@ class Groups
     ): bool {
         global $zdb, $login;
 
+        $eeds_group_ids = self::getEedsMappedGroupIds();
+        $requested_group_ids = [];
+        foreach ($groups as $group_spec) {
+            $parts = explode('|', $group_spec, 2);
+            $requested_group_ids[] = (int)$parts[0];
+        }
+        if (array_intersect($requested_group_ids, $eeds_group_ids) !== []) {
+            Analog::log(
+                'Trying to change a read-only EEDS structure group for member #' . $adh->id,
+                Analog::WARNING
+            );
+            return false;
+        }
+
         //null means no restriction; an empty list means nothing to change
         $managed_groups = null;
         if ($scope !== false) {
@@ -266,6 +320,12 @@ class Groups
                 return true;
             }
         }
+        if ($managed_groups !== null) {
+            $managed_groups = array_values(array_diff($managed_groups, $eeds_group_ids));
+            if ($managed_groups === []) {
+                return true;
+            }
+        }
 
         try {
             if ($transaction === false) {
@@ -279,6 +339,8 @@ class Groups
             $delete->where([Adherent::PK => $adh->id]);
             if ($managed_groups !== null) {
                 $delete->where->in(Group::PK, $managed_groups);
+            } elseif ($eeds_group_ids !== []) {
+                $delete->where->notIn(Group::PK, $eeds_group_ids);
             }
             $zdb->execute($delete);
 
@@ -371,12 +433,19 @@ class Groups
         global $zdb;
 
         try {
+            $eeds_group_ids = self::getEedsMappedGroupIds();
             $del_qry = $zdb->delete(Group::GROUPSUSERS_TABLE);
             $del_qry->where->in(Adherent::PK, $ids);
+            if ($eeds_group_ids !== []) {
+                $del_qry->where->notIn(Group::PK, $eeds_group_ids);
+            }
             $zdb->execute($del_qry);
 
             $del_qry = $zdb->delete(Group::GROUPSMANAGERS_TABLE);
             $del_qry->where->in(Adherent::PK, $ids);
+            if ($eeds_group_ids !== []) {
+                $del_qry->where->notIn(Group::PK, $eeds_group_ids);
+            }
             $zdb->execute($del_qry);
         } catch (Throwable $e) {
             Logs::exception($e, 'Unable to remove member #' . implode(', ', $ids) . ' from his groups', Analog::ERROR);

@@ -103,7 +103,7 @@ final readonly class EedsScope
     ): array {
         $date = $effective_date ?? (new DateTimeImmutable())->format('Y-m-d');
         $select = $zdb->select('eeds_member_scopes', 'ms');
-        $select->columns(['ms.id_structure'])->join(
+        $select->columns(['id_structure'])->join(
             name: ['st' => PREFIX_DB . 'eeds_structures'],
             on: 'ms.id_structure=st.id_structure',
             columns: [],

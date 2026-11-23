@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace EEDSFoundation\Console;
 
 use EEDSFoundation\Domain\StructureService;
+use EEDSFoundation\Domain\StructureGroupMapper;
 use Galette\Console\Command\AbstractCommand;
 use Galette\Core\Db;
 use Galette\Core\Logs;
@@ -23,12 +24,20 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 use function Safe\date;
 
+/**
+ * Initialize the EEDS national root and its Galette group projection.
+ *
+ * @author EEDS Engineering <engineering@eeds.sn>
+ */
 #[AsCommand(
     name: 'eeds:initialize-national',
     description: 'Initialize the unique EEDS national root structure'
 )]
 final class InitializeNationalStructure extends AbstractCommand
 {
+    /**
+     * Create the command.
+     */
     public function __construct(
         string $basepath,
         private readonly Db $zdb
@@ -36,6 +45,9 @@ final class InitializeNationalStructure extends AbstractCommand
         parent::__construct($basepath);
     }
 
+    /**
+     * Configure initialization options.
+     */
     #[Override]
     protected function configure(): void
     {
@@ -46,6 +58,9 @@ final class InitializeNationalStructure extends AbstractCommand
             ->addOption('actor-id', null, InputOption::VALUE_REQUIRED, 'Optional technical actor member ID');
     }
 
+    /**
+     * Initialize the national root and its matching Galette group.
+     */
     #[Override]
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
@@ -64,6 +79,7 @@ final class InitializeNationalStructure extends AbstractCommand
                 (string)$input->getOption('effective-date'),
                 $actor_id
             );
+            (new StructureGroupMapper())->ensureGroupForStructure($this->zdb, $id);
             $this->io->success('EEDS national root initialized (ID ' . $id . ').');
             return self::SUCCESS;
         } catch (\Throwable $e) {

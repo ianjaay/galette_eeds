@@ -130,6 +130,7 @@ final readonly class AffiliationService
             ]);
             $zdb->execute($insert);
 
+            (new StructureGroupMapper())->synchronizeMember($zdb, $member_id);
             $zdb->commit();
             return true;
         } catch (Throwable $e) {

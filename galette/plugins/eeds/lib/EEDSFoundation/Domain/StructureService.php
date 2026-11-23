@@ -52,16 +52,28 @@ final readonly class StructureService
             throw new \InvalidArgumentException('Invalid effective date.');
         }
 
+        $owns_transaction = !$zdb->inTransaction();
         try {
-            $zdb->beginTransaction();
+            if ($owns_transaction) {
+                $zdb->beginTransaction();
+            }
 
             $existing = $zdb->select('eeds_structures');
-            $existing->columns(['id_structure'])->where(['structure_type' => 'national']);
+            $existing->columns(['id_structure', 'parent_structure'])->where(['structure_type' => 'national']);
             $rows = $zdb->execute($existing);
-            if ($rows->count() > 0) {
+            if ($rows->count() > 1) {
+                throw new \RuntimeException('Multiple EEDS national roots exist; resolve them before continuing.');
+            }
+            if ($rows->count() === 1) {
                 $row = $rows->current();
-                $zdb->commit();
-                return (int)$row->id_structure;
+                if ($row->parent_structure !== null) {
+                    throw new \RuntimeException('The EEDS national root must not have a parent.');
+                }
+                $id = (int)$row->id_structure;
+                if ($owns_transaction) {
+                    $zdb->commit();
+                }
+                return $id;
             }
 
             $insert = $zdb->insert('eeds_structures');
@@ -81,10 +93,13 @@ final readonly class StructureService
             $select = $zdb->select('eeds_structures');
             $select->columns(['id_structure'])->where(['structure_code' => $code]);
             $row = $zdb->execute($select)->current();
-            $zdb->commit();
-            return (int)$row->id_structure;
+            $id = (int)$row->id_structure;
+            if ($owns_transaction) {
+                $zdb->commit();
+            }
+            return $id;
         } catch (Throwable $e) {
-            if ($zdb->inTransaction()) {
+            if ($owns_transaction && $zdb->inTransaction()) {
                 $zdb->rollback();
             }
             Logs::exception($e, 'Unable to initialize the EEDS national root', Analog::WARNING);
@@ -128,8 +143,11 @@ final readonly class StructureService
         }
         $structure_type = trim($structure_type);
 
+        $owns_transaction = !$zdb->inTransaction();
         try {
-            $zdb->beginTransaction();
+            if ($owns_transaction) {
+                $zdb->beginTransaction();
+            }
 
             $parent = $zdb->select('eeds_structures');
             $parent->columns(['id_structure', 'structure_type'])->where(['id_structure' => $parent_structure]);
@@ -141,7 +159,6 @@ final readonly class StructureService
             );
             $parent_row = $zdb->execute($parent);
             if ($parent_row->count() !== 1) {
-                $zdb->rollback();
                 throw new \InvalidArgumentException(
                     'The parent structure does not exist or is not effective on the selected date.'
                 );
@@ -153,8 +170,7 @@ final readonly class StructureService
                 'groupe_local' => 'district',
                 'unite' => 'groupe_local',
             ];
-            if (($allowed_parent[$structure_type] ?? null) !== $parent_type) {
-                $zdb->rollback();
+            if ($allowed_parent[$structure_type] !== $parent_type) {
                 throw new \InvalidArgumentException(
                     'The parent structure type is not valid for this EEDS structure level.'
                 );
@@ -177,10 +193,14 @@ final readonly class StructureService
             $select = $zdb->select('eeds_structures');
             $select->columns(['id_structure'])->where(['structure_code' => trim($structure_code)]);
             $row = $zdb->execute($select)->current();
-            $zdb->commit();
-            return (int)$row->id_structure;
+            $id = (int)$row->id_structure;
+            (new StructureGroupMapper())->ensureGroupForStructure($zdb, $id);
+            if ($owns_transaction) {
+                $zdb->commit();
+            }
+            return $id;
         } catch (Throwable $e) {
-            if ($zdb->inTransaction()) {
+            if ($owns_transaction && $zdb->inTransaction()) {
                 $zdb->rollback();
             }
             Logs::exception($e, 'Unable to create EEDS structure', Analog::WARNING);

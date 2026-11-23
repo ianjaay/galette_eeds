@@ -36,13 +36,12 @@ final readonly class DuplicatePreview
         try {
             $select = $zdb->select('adherents', 'a');
             $select->columns([
-                'a.id_adh',
-                'a.nom_adh',
-                'a.prenom_adh',
-                'a.ddn_adh',
-                'a.login_adh',
-                'a.email_adh',
-                'n.national_number',
+                'id_adh',
+                'nom_adh',
+                'prenom_adh',
+                'ddn_adh',
+                'login_adh',
+                'email_adh',
             ]);
             $select->quantifier('DISTINCT');
             $select->join(
@@ -53,7 +52,7 @@ final readonly class DuplicatePreview
             )->join(
                 name: ['n' => PREFIX_DB . 'eeds_member_numbers'],
                 on: 'a.id_adh=n.id_adh',
-                columns: [],
+                columns: ['national_number'],
                 type: $select::JOIN_LEFT
             );
             $select->where([

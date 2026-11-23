@@ -63,6 +63,9 @@ Replace or isolate for R1:
 
 - generic groups used as EEDS structures should be linked to a plugin-owned
   structure model rather than being treated as the complete structure register;
+- Galette groups are a synchronized, one-to-one projection of EEDS structures;
+  active EEDS affiliations populate their corresponding groups and all
+  ancestors, while mapped groups are read-only through native Galette screens;
 - broad status labels should not be the sole membership lifecycle record;
 - unrestricted table exports must not remain an EEDS export mechanism.
 
@@ -429,8 +432,8 @@ Replace unrestricted EEDS export-table selection with a scoped XLSX domain expor
 - export format: XLSX;
 - fields: all non-secret Galette member fields and active EEDS domain fields
   available to the export service, in the first R1 release;
-- no password, private cryptographic key/fingerprint or unrelated database
-  tables;
+- no password, Galette's internal `fingerprint` import/fixture marker, or
+  unrelated database tables;
 - only members in the caller's resolved EEDS scope;
 - separate `eeds:export` permission;
 - export access is assigned by the association's approved profile/permission

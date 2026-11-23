@@ -15,6 +15,8 @@ use Galette\Updater\AbstractUpdater;
 
 /**
  * Remove the broad Staff export grant and provision the approved profile roles.
+ *
+ * @author EEDS Engineering <engineering@eeds.sn>
  */
 final class UpgradeTo03 extends AbstractUpdater
 {

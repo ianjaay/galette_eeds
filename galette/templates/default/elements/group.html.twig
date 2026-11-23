@@ -6,6 +6,12 @@
 
 {% set can_edit = group.canEdit(login) %}
 
+{% if group.isEedsMapped() %}
+    <div class="ui info message">
+        {{ _T("This group mirrors an EEDS structure. Change its name, parent and members through the EEDS registry.") }}
+    </div>
+{% endif %}
+
 <form class="ui form" action="{{ url_for("doEditGroup", {"id": group.getId()}) }}" method="post" enctype="multipart/form-data" id="group_form">
     <div class="ui basic fitted segment">
         <div class="ui styled fluid accordion row">

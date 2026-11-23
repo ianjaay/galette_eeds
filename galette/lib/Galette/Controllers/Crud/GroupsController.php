@@ -361,6 +361,10 @@ class GroupsController extends CrudController
     {
         $post = $request->getParsedBody();
         $group = new Group($id);
+        if ($group->isEedsMapped()) {
+            Analog::log('Trying to edit read-only EEDS structure group ' . $id, Analog::INFO);
+            throw new HttpForbiddenException($request);
+        }
         if (!$group->canEdit($this->login)) {
             throw new \RuntimeException('Trying to edit group without appropriate permissions');
         }
@@ -561,6 +565,10 @@ class GroupsController extends CrudController
      */
     private function canDeleteGroup(Group $group, bool $cascade): bool
     {
+        if ($group->isEedsMapped()) {
+            Analog::log('Trying to remove read-only EEDS structure group ' . $group->getId(), Analog::INFO);
+            return false;
+        }
         if (!$this->accessControl->can('group:delete', $group)) {
             Analog::log(
                 'Trying to remove group ' . $group->getId() . ' without appropriate permissions',
@@ -594,6 +602,14 @@ class GroupsController extends CrudController
      */
     private function canMoveUnder(Group $group, int $parent_id): bool
     {
+        if ($group->isEedsMapped()) {
+            Analog::log('Trying to move read-only EEDS structure group ' . $group->getId(), Analog::INFO);
+            return false;
+        }
+        if ($parent_id > 0 && (new Group($parent_id))->isEedsMapped()) {
+            Analog::log('Trying to place a Galette group under an EEDS structure group', Analog::INFO);
+            return false;
+        }
         if ($parent_id === 0 || $parent_id === $group->getParentGroup()?->getId()) {
             return true;
         }

@@ -3,11 +3,13 @@
 {% block content %}
 <div class="ui segment">
     <h2 class="ui header">{{ page_title }}</h2>
-    <form method="post" action="{{ url_for("eeds_export") }}">
-        <button type="submit" class="ui primary button">
-            {{ _T("Export scoped members to Excel") }}
-        </button>
-    </form>
+    {% if can_export %}
+        <form method="post" action="{{ url_for("eeds_export") }}">
+            <button type="submit" class="ui primary button">
+                {{ _T("Export scoped members to Excel") }}
+            </button>
+        </form>
+    {% endif %}
 
     <h3 class="ui header">{{ _T("Structures") }}</h3>
     {% if structures %}
